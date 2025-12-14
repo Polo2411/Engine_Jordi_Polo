@@ -1,0 +1,24 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.VC.db
+*.VC.VC.opendb
+
+# Build outputs (en cualquier subcarpeta)
+**/Debug/
+**/Release/
+**/x64/
+**/x86/
+**/bin/
+**/build/
+**/out/
+
+# Debug / logs
+*.pdb
+*.ipch
+*.log
+*.tlog
+
+# Windows
+Thumbs.db

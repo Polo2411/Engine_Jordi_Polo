@@ -1,0 +1,128 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="3rdParty\imgui-docking\backends\imgui_impl_dx12.cpp" />
+    <ClCompile Include="3rdParty\imgui-docking\backends\imgui_impl_win32.cpp" />
+    <ClCompile Include="3rdParty\imgui-docking\imgui.cpp" />
+    <ClCompile Include="3rdParty\imgui-docking\imgui_demo.cpp" />
+    <ClCompile Include="3rdParty\imgui-docking\imgui_draw.cpp" />
+    <ClCompile Include="3rdParty\imgui-docking\imgui_tables.cpp" />
+    <ClCompile Include="3rdParty\imgui-docking\imgui_widgets.cpp" />
+    <ClCompile Include="3rdParty\ImGuizmo\ImGuizmo.cpp" />
+    <ClCompile Include="Application.cpp" />
+    <ClCompile Include="D3D12Module.cpp" />
+    <ClCompile Include="DebugDrawPass.cpp" />
+    <ClCompile Include="Engine.cpp" />
+    <ClCompile Include="GamePad.cpp" />
+    <ClCompile Include="Globals.cpp" />
+    <ClCompile Include="ImGuiPass.cpp" />
+    <ClCompile Include="Keyboard.cpp" />
+    <ClCompile Include="ModuleInput.cpp" />
+    <ClCompile Include="ModuleResources.cpp" />
+    <ClCompile Include="Mouse.cpp" />
+    <ClCompile Include="SimpleMath.cpp" />
+    <ClCompile Include="Exercise1Module.cpp">
+      <Filter>ExerciseModules</Filter>
+    </ClCompile>
+    <ClCompile Include="Exercise2Module.cpp">
+      <Filter>ExerciseModules</Filter>
+    </ClCompile>
+    <ClCompile Include="UIModule.cpp">
+      <Filter>UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Timer.cpp">
+      <Filter>UI</Filter>
+    </ClCompile>
+    <ClCompile Include="TimerManager.cpp">
+      <Filter>UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Exercise3Module.cpp">
+      <Filter>ExerciseModules</Filter>
+    </ClCompile>
+    <ClCompile Include="ModuleCamera.cpp" />
+    <ClCompile Include="MathUtils.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="3rdParty\imgui-1.89.8\backends\imgui_impl_win32.h" />
+    <ClInclude Include="3rdParty\imgui-docking\backends\imgui_impl_dx12.h" />
+    <ClInclude Include="3rdParty\imgui-docking\backends\imgui_impl_win32.h" />
+    <ClInclude Include="3rdParty\imgui-docking\imgui.h" />
+    <ClInclude Include="3rdParty\imgui-docking\imgui_internal.h" />
+    <ClInclude Include="3rdParty\ImGuizmo\ImGuizmo.h" />
+    <ClInclude Include="Application.h" />
+    <ClInclude Include="D3D12Module.h" />
+    <ClInclude Include="DebugDrawPass.h" />
+    <ClInclude Include="debug_draw.hpp" />
+    <ClInclude Include="Engine.h" />
+    <ClInclude Include="framework.h" />
+    <ClInclude Include="GamePad.h" />
+    <ClInclude Include="Globals.h" />
+    <ClInclude Include="ImGuiPass.h" />
+    <ClInclude Include="Keyboard.h" />
+    <ClInclude Include="Module.h" />
+    <ClInclude Include="ModuleInput.h" />
+    <ClInclude Include="ModuleResources.h" />
+    <ClInclude Include="Mouse.h" />
+    <ClInclude Include="PlatformHelpers.h" />
+    <ClInclude Include="ReadData.h" />
+    <ClInclude Include="Resource.h" />
+    <ClInclude Include="SimpleMath.h" />
+    <ClInclude Include="targetver.h" />
+    <ClInclude Include="Exercise1Module.h">
+      <Filter>ExerciseModules</Filter>
+    </ClInclude>
+    <ClInclude Include="Exercise2Module.h">
+      <Filter>ExerciseModules</Filter>
+    </ClInclude>
+    <ClInclude Include="Timer.h">
+      <Filter>UI</Filter>
+    </ClInclude>
+    <ClInclude Include="TimeManager.h">
+      <Filter>UI</Filter>
+    </ClInclude>
+    <ClInclude Include="UIModule.h">
+      <Filter>UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Exercise3Module.h">
+      <Filter>ExerciseModules</Filter>
+    </ClInclude>
+    <ClInclude Include="ModuleCamera.h" />
+    <ClInclude Include="MathUtils.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Engine.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="Engine.ico" />
+    <Image Include="small.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+    <None Include="SimpleMath.inl" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="ExerciseModules">
+      <UniqueIdentifier>{142539cf-68cb-4ab9-aea6-4037df53cbe6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ExerciseModules\Shaders">
+      <UniqueIdentifier>{5e07978e-9055-49d7-b040-1fa349cf6654}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="UI">
+      <UniqueIdentifier>{ebe87baa-bea9-4a33-90a8-542777be6c5c}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="Exercise2VS.hlsl">
+      <Filter>ExerciseModules\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Exercise2PS.hlsl">
+      <Filter>ExerciseModules\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Exercise3VS.hlsl">
+      <Filter>ExerciseModules\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Exercise3PS.hlsl">
+      <Filter>ExerciseModules\Shaders</Filter>
+    </FxCompile>
+  </ItemGroup>
+</Project>
