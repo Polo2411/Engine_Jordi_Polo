@@ -21,6 +21,8 @@ public:
     D3D12_CPU_DESCRIPTOR_HANDLE getCPUHandle(uint32_t index) const;
     D3D12_GPU_DESCRIPTOR_HANDLE getGPUHandle(uint32_t index) const;
     uint32_t allocate();
+    uint32_t createSRV(ID3D12Resource* texture);
+
     void reset();
 
 private:
