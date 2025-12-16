@@ -2,6 +2,8 @@
 #include "D3D12Module.h"
 #include "d3dx12.h"
 #include "ImGuiPass.h"
+#include "ModuleShaderDescriptors.h"
+#include "ModuleSamplers.h"
 
 #include <algorithm>
 
@@ -398,6 +400,25 @@ void D3D12Module::getWindowSize(unsigned& width, unsigned& height)
     width = unsigned(clientRect.right - clientRect.left);
     height = unsigned(clientRect.bottom - clientRect.top);
 }
+
+void D3D12Module::bindShaderVisibleHeaps(ID3D12GraphicsCommandList* cmdList)
+{
+    if (!cmdList)
+        return;
+
+    ID3D12DescriptorHeap* heaps[2] = {};
+    UINT count = 0;
+
+    if (app && app->getShaderDescriptors() && app->getShaderDescriptors()->getHeap())
+        heaps[count++] = app->getShaderDescriptors()->getHeap();
+
+    if (app && app->getSamplers() && app->getSamplers()->getHeap())
+        heaps[count++] = app->getSamplers()->getHeap();
+
+    if (count > 0)
+        cmdList->SetDescriptorHeaps(count, heaps);
+}
+
 
 // -------------------- getters --------------------
 

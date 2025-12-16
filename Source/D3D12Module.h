@@ -48,6 +48,9 @@ public:
     unsigned getCurrentFrame() const { return frameIndex; }
     unsigned getLastCompletedFrame() const { return lastCompletedFrame; }
 
+    void bindShaderVisibleHeaps(ID3D12GraphicsCommandList* cmdList);
+
+
 private:
     void getWindowSize(unsigned& width, unsigned& height);
 
