@@ -2,6 +2,10 @@
 
 #include "Module.h"
 #include <cstdint>
+#include <d3d12.h>
+#include <wrl.h>
+
+using Microsoft::WRL::ComPtr;
 
 class ModuleShaderDescriptors : public Module
 {
@@ -12,10 +16,17 @@ public:
     bool init() override;
     bool cleanUp() override;
 
-    // --- Stub API (no funcional todavía en el commit 1.1) ---
-    ID3D12DescriptorHeap* getHeap() const { return nullptr; }
+    ID3D12DescriptorHeap* getHeap() const { return heap.Get(); }
 
-    uint32_t alloc() { return 0u; }
-    D3D12_CPU_DESCRIPTOR_HANDLE getCPUHandle(uint32_t /*index*/) const { return D3D12_CPU_DESCRIPTOR_HANDLE{ 0 }; }
-    D3D12_GPU_DESCRIPTOR_HANDLE getGPUHandle(uint32_t /*index*/) const { return D3D12_GPU_DESCRIPTOR_HANDLE{ 0 }; }
+    D3D12_CPU_DESCRIPTOR_HANDLE getCPUHandle(uint32_t index) const;
+    D3D12_GPU_DESCRIPTOR_HANDLE getGPUHandle(uint32_t index) const;
+
+private:
+    ComPtr<ID3D12DescriptorHeap> heap;
+
+    D3D12_CPU_DESCRIPTOR_HANDLE cpuStart{ 0 };
+    D3D12_GPU_DESCRIPTOR_HANDLE gpuStart{ 0 };
+    uint32_t descriptorSize = 0;
+
+    static constexpr uint32_t MAX_DESCRIPTORS = 256;
 };
