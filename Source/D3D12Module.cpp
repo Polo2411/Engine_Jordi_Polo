@@ -1,7 +1,9 @@
 ﻿#include "Globals.h"
 #include "D3D12Module.h"
 #include "d3dx12.h"
-#include "ImGuiPass.h"   // 🔹 importante
+#include "ImGuiPass.h"
+
+#include <algorithm>
 
 // -------------------- ctor / dtor --------------------
 
@@ -34,7 +36,7 @@ bool D3D12Module::init()
     ok = ok && createDrawCommandQueue();
     ok = ok && createSwapChain();
     ok = ok && createRenderTargets();
-    ok = ok && createDepthStencil();     // 👈 IMPORTANTE para Exercise3
+    ok = ok && createDepthStencil();
     ok = ok && createCommandList();
     ok = ok && createDrawFence();
 
@@ -42,8 +44,17 @@ bool D3D12Module::init()
     {
         currentBackBufferIdx = swapChain->GetCurrentBackBufferIndex();
 
-        // 🔹 Crear ImGuiPass una vez tenemos device + ventana
+        // ImGuiPass (tu engine lo hace aquí)
         imgui = std::make_unique<ImGuiPass>(device.Get(), hWnd);
+
+        // inicializa tracking
+        frameIndex = 0;
+        lastCompletedFrame = 0;
+        for (UINT i = 0; i < kBufferCount; ++i)
+        {
+            drawFenceValues[i] = 0;
+            frameValues[i] = 0;
+        }
     }
 
     return ok;
@@ -51,12 +62,12 @@ bool D3D12Module::init()
 
 bool D3D12Module::cleanUp()
 {
-    // destruir ImGuiPass primero para liberar recursos DX12 asociados
     imgui.reset();
 
     if (drawEvent)
         CloseHandle(drawEvent);
     drawEvent = nullptr;
+
     return true;
 }
 
@@ -66,23 +77,30 @@ void D3D12Module::preRender()
 {
     currentBackBufferIdx = swapChain->GetCurrentBackBufferIndex();
 
+    // Si este backbuffer aún está en uso por la GPU (tiene fence pendiente), esperamos.
     if (drawFenceValues[currentBackBufferIdx] != 0)
     {
         drawFence->SetEventOnCompletion(drawFenceValues[currentBackBufferIdx], drawEvent);
         WaitForSingleObject(drawEvent, INFINITE);
+
+        // Ya sabemos seguro que el frame que se renderizó en este backbuffer se ha completado.
+        lastCompletedFrame = std::max(lastCompletedFrame, frameValues[currentBackBufferIdx]);
     }
+
+    // Nuevo frame (CPU)
+    ++frameIndex;
+    frameValues[currentBackBufferIdx] = frameIndex;
 
     commandAllocators[currentBackBufferIdx]->Reset();
 
-    // 🔹 Aquí arrancamos el frame de ImGui
+    // Arrancar frame ImGui
     if (imgui)
         imgui->startFrame();
 }
 
 void D3D12Module::postRender()
 {
-    // Present sencillo (vsync ON: 1, puedes poner 0 si quieres)
-    swapChain->Present(1, 0);
+    swapChain->Present(1, 0); // vsync ON
     signalDrawQueue();
 }
 
@@ -102,6 +120,9 @@ void D3D12Module::flush()
     drawCommandQueue->Signal(drawFence.Get(), ++drawFenceCounter);
     drawFence->SetEventOnCompletion(drawFenceCounter, drawEvent);
     WaitForSingleObject(drawEvent, INFINITE);
+
+    // Al hacer flush, podemos considerar que todo lo anterior está completado.
+    lastCompletedFrame = frameIndex;
 }
 
 void D3D12Module::resize()
@@ -109,7 +130,6 @@ void D3D12Module::resize()
     unsigned width, height;
     getWindowSize(width, height);
 
-    // Si no cambia el tamaño o la ventana está minimizada, no hacemos nada
     if (width == 0 || height == 0 ||
         (width == windowWidth && height == windowHeight))
         return;
@@ -117,21 +137,19 @@ void D3D12Module::resize()
     windowWidth = width;
     windowHeight = height;
 
-    // Asegurarnos de que la GPU ha terminado
     flush();
 
-    // Liberar backbuffers y depth
     for (UINT i = 0; i < kBufferCount; ++i)
     {
         backBuffers[i].Reset();
         drawFenceValues[i] = 0;
+        frameValues[i] = 0;
     }
 
     rtDescriptorHeap.Reset();
     depthStencilBuffer.Reset();
     dsDescriptorHeap.Reset();
 
-    // Reajustar el swapchain
     DXGI_SWAP_CHAIN_DESC swapDesc = {};
     bool ok = SUCCEEDED(swapChain->GetDesc(&swapDesc));
     if (ok)
@@ -151,13 +169,9 @@ void D3D12Module::resize()
         ok = ok && createDepthStencil();
     }
 
-    // Por seguridad, actualizar índice actual
     if (ok)
-    {
         currentBackBufferIdx = swapChain->GetCurrentBackBufferIndex();
-    }
 }
-
 
 // -------------------- helpers creación --------------------
 
@@ -282,7 +296,6 @@ bool D3D12Module::createRenderTargets()
     return ok;
 }
 
-// -------------------- NUEVO: depth-stencil --------------------
 bool D3D12Module::createDepthStencil()
 {
     D3D12_CLEAR_VALUE clearValue = {};
@@ -298,9 +311,9 @@ bool D3D12Module::createDepthStencil()
             DXGI_FORMAT_D32_FLOAT,
             windowWidth,
             windowHeight,
-            1,      // array size
-            0,      // mip levels (0 → full mip chain)
-            1, 0,   // sample count, quality
+            1,
+            0,
+            1, 0,
             D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL |
             D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE
         );
@@ -320,7 +333,6 @@ bool D3D12Module::createDepthStencil()
     {
         depthStencilBuffer->SetName(L"Depth/Stencil Texture");
 
-        // Heap DSV
         D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
         dsvHeapDesc.NumDescriptors = 1;
         dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
@@ -341,14 +353,13 @@ bool D3D12Module::createDepthStencil()
     {
         device->CreateDepthStencilView(
             depthStencilBuffer.Get(),
-            nullptr, // default desc
+            nullptr,
             dsDescriptorHeap->GetCPUDescriptorHandleForHeapStart()
         );
     }
 
     return ok;
 }
-
 
 bool D3D12Module::createCommandList()
 {
@@ -388,8 +399,6 @@ void D3D12Module::getWindowSize(unsigned& width, unsigned& height)
     height = unsigned(clientRect.bottom - clientRect.top);
 }
 
-
-
 // -------------------- getters --------------------
 
 D3D12_CPU_DESCRIPTOR_HANDLE D3D12Module::getRenderTargetDescriptor()
@@ -404,4 +413,3 @@ D3D12_CPU_DESCRIPTOR_HANDLE D3D12Module::getDepthStencilDescriptor()
 {
     return dsDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
 }
-

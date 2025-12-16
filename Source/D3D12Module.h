@@ -1,86 +1,99 @@
 ﻿#pragma once
 
 #include "Module.h"
-#include "Globals.h"
 
-class ImGuiPass;   // <--- forward declaration
+#include <dxgi1_6.h>
+#include <cstdint>
+#include <algorithm> // std::max
+
+class ImGuiPass;
 
 class D3D12Module : public Module
 {
 public:
-    explicit D3D12Module(HWND hWnd);
-    ~D3D12Module() override;
+    static constexpr UINT kBufferCount = 2; // si en tu proyecto ya existe, quita esta línea
+
+public:
+    D3D12Module(HWND wnd);
+    ~D3D12Module();
 
     bool init() override;
-    void preRender() override;
-    void render() override {}            // NO dibuja nada
-    void postRender() override;
     bool cleanUp() override;
 
-    // --- Getters estilo profe, para los ejercicios ---
-    ID3D12Device5* getDevice() { return device.Get(); }
-    ID3D12GraphicsCommandList* getCommandList() { return commandList.Get(); }
-    ID3D12CommandAllocator* getCommandAllocator() { return commandAllocators[currentBackBufferIdx].Get(); }
-    ID3D12CommandQueue* getDrawCommandQueue() { return drawCommandQueue.Get(); }
-    ID3D12Resource* getBackBuffer() { return backBuffers[currentBackBufferIdx].Get(); }
-
-    D3D12_CPU_DESCRIPTOR_HANDLE getRenderTargetDescriptor();
-    D3D12_CPU_DESCRIPTOR_HANDLE getDepthStencilDescriptor();
-
-    UINT getWindowWidth()  const { return windowWidth; }
-    UINT getWindowHeight() const { return windowHeight; }
+    void preRender() override;
+    void postRender() override;
 
     void flush();
     void resize();
 
-    // 🔹 acceso al ImGuiPass
-    ImGuiPass* getImGuiPass() { return imgui.get(); }
+    // --- Getters DX12 ---
+    ID3D12Device* getDevice() { return device.Get(); }
+    ID3D12GraphicsCommandList* getCommandList() { return commandList.Get(); }
+    ID3D12CommandAllocator* getCommandAllocator() { return commandAllocators[currentBackBufferIdx].Get(); }
+    ID3D12Resource* getBackBuffer() { return backBuffers[currentBackBufferIdx].Get(); }
+    ID3D12CommandQueue* getDrawCommandQueue() { return drawCommandQueue.Get(); }
+
+    unsigned getWindowWidth() const { return windowWidth; }
+    unsigned getWindowHeight() const { return windowHeight; }
+
+    D3D12_CPU_DESCRIPTOR_HANDLE getRenderTargetDescriptor();
+    D3D12_CPU_DESCRIPTOR_HANDLE getDepthStencilDescriptor();
+
+    ImGuiPass* getImGuiPass() const { return imgui.get(); }
+
+    // --- Fence / sync ---
+    UINT signalDrawQueue();
+
+    // --- Frame tracking (para deferred free / GC por frame) ---
+    unsigned getCurrentFrame() const { return frameIndex; }
+    unsigned getLastCompletedFrame() const { return lastCompletedFrame; }
 
 private:
-    // ---- helpers internos ----
-    void  enableDebugLayer();
-    bool  createFactory();
-    bool  createDevice(bool useWarp);
-    bool  setupInfoQueue();
-    bool  createDrawCommandQueue();
-    bool  createSwapChain();
-    bool  createRenderTargets();
-    bool  createDepthStencil(); 
-    bool  createCommandList();
-    bool  createDrawFence();
-    void  getWindowSize(unsigned& width, unsigned& height);
+    void getWindowSize(unsigned& width, unsigned& height);
 
-    UINT  signalDrawQueue();
+    void enableDebugLayer();
+    bool createFactory();
+    bool createDevice(bool useWarp);
+    bool setupInfoQueue();
+    bool createDrawCommandQueue();
+    bool createSwapChain();
+    bool createRenderTargets();
+    bool createDepthStencil();
+    bool createCommandList();
+    bool createDrawFence();
 
 private:
-    HWND                            hWnd = nullptr;
+    HWND hWnd = nullptr;
 
-    ComPtr<IDXGIFactory7>           factory;
-    ComPtr<ID3D12Device5>           device;
+    ComPtr<IDXGIFactory6> factory;
+    ComPtr<ID3D12Device> device;
 
-    ComPtr<ID3D12CommandQueue>      drawCommandQueue;
-    ComPtr<IDXGISwapChain4>         swapChain;
+    ComPtr<IDXGISwapChain4> swapChain;
+    ComPtr<ID3D12DescriptorHeap> rtDescriptorHeap;
+    ComPtr<ID3D12Resource> backBuffers[kBufferCount];
 
-    static constexpr UINT           kBufferCount = FRAMES_IN_FLIGHT;
-    ComPtr<ID3D12Resource>          backBuffers[kBufferCount];
-    ComPtr<ID3D12DescriptorHeap>    rtDescriptorHeap;
+    ComPtr<ID3D12DescriptorHeap> dsDescriptorHeap;
+    ComPtr<ID3D12Resource> depthStencilBuffer;
 
-    // 👇 NUEVO: depth buffer + heap DSV
-    ComPtr<ID3D12Resource>          depthStencilBuffer;
-    ComPtr<ID3D12DescriptorHeap>    dsDescriptorHeap;
+    ComPtr<ID3D12CommandAllocator> commandAllocators[kBufferCount];
+    ComPtr<ID3D12GraphicsCommandList> commandList;
+    ComPtr<ID3D12CommandQueue> drawCommandQueue;
 
-    ComPtr<ID3D12CommandAllocator>      commandAllocators[kBufferCount];
-    ComPtr<ID3D12GraphicsCommandList>   commandList;
+    ComPtr<ID3D12Fence> drawFence;
+    HANDLE drawEvent = nullptr;
 
-    ComPtr<ID3D12Fence>             drawFence;
-    HANDLE                          drawEvent = nullptr;
-    UINT64                          drawFenceValues[kBufferCount] = {};
-    UINT64                          drawFenceCounter = 0;
+    UINT drawFenceCounter = 0;
+    UINT drawFenceValues[kBufferCount] = {}; // fence value que corresponde al último frame enviado en ese backbuffer
 
-    UINT                            currentBackBufferIdx = 0;
-    UINT                            windowWidth = 0;
-    UINT                            windowHeight = 0;
+    // --- NUEVO: tracking de frames por backbuffer ---
+    unsigned frameValues[kBufferCount] = {};   // frameIndex asociado al último uso de ese backbuffer
+    unsigned frameIndex = 0;                   // contador de frames (CPU)
+    unsigned lastCompletedFrame = 0;           // último frame completado (seguro para liberar)
 
-    // 🔹 responsable de ImGui (heap SRV + backends DX12/Win32)
-    std::unique_ptr<ImGuiPass>      imgui;
+    unsigned currentBackBufferIdx = 0;
+
+    unsigned windowWidth = 0;
+    unsigned windowHeight = 0;
+
+    std::unique_ptr<ImGuiPass> imgui;
 };
