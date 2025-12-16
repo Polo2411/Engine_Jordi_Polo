@@ -41,6 +41,11 @@
     </ClCompile>
     <ClCompile Include="ModuleCamera.cpp" />
     <ClCompile Include="MathUtils.cpp" />
+    <ClCompile Include="ModuleShaderDescriptors.cpp" />
+    <ClCompile Include="ModuleSamplers.cpp" />
+    <ClCompile Include="Exercise4Module.cpp">
+      <Filter>ExerciseModules</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="3rdParty\imgui-1.89.8\backends\imgui_impl_win32.h" />
@@ -88,6 +93,11 @@
     </ClInclude>
     <ClInclude Include="ModuleCamera.h" />
     <ClInclude Include="MathUtils.h" />
+    <ClInclude Include="ModuleShaderDescriptors.h" />
+    <ClInclude Include="ModuleSamplers.h" />
+    <ClInclude Include="Exercise4Module.h">
+      <Filter>ExerciseModules</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Engine.rc" />
@@ -122,6 +132,12 @@
       <Filter>ExerciseModules\Shaders</Filter>
     </FxCompile>
     <FxCompile Include="Exercise3PS.hlsl">
+      <Filter>ExerciseModules\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Exercise4VS.hlsl">
+      <Filter>ExerciseModules\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Exercise4PS.hlsl">
       <Filter>ExerciseModules\Shaders</Filter>
     </FxCompile>
   </ItemGroup>
