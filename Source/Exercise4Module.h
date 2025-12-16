@@ -1,8 +1,10 @@
 #pragma once
 
 #include "Module.h"
+#include "ModuleSamplers.h"
 #include <d3d12.h>
 #include <wrl.h>
+#include <cstdint>
 
 using Microsoft::WRL::ComPtr;
 
@@ -28,7 +30,8 @@ private:
     ComPtr<ID3D12RootSignature>     rootSignature;
     ComPtr<ID3D12PipelineState>     pso;
 
-    ComPtr<ID3D12Resource> texture;
-    uint32_t textureSRV = UINT32_MAX;
+    ComPtr<ID3D12Resource>          texture;
+    uint32_t                        textureSRV = UINT32_MAX;
 
+    ModuleSamplers::Type            currentSampler = ModuleSamplers::Type::Linear_Wrap;
 };

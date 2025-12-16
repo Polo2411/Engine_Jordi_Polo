@@ -5,9 +5,12 @@
 #include "D3D12Module.h"
 #include "ModuleCamera.h"
 #include "ModuleResources.h"
+#include "ModuleShaderDescriptors.h"
+
 #include "ReadData.h"
 #include "d3dx12.h"
-#include "ModuleShaderDescriptors.h"
+
+#include "imgui.h"
 
 struct Vertex
 {
@@ -18,9 +21,11 @@ struct Vertex
 bool Exercise4Module::init()
 {
     bool ok = true;
+
     ok &= createVertexBuffer();
     ok &= createRootSignature();
     ok &= createPipelineState();
+
     if (ok)
     {
         ModuleResources* resources = app->getResources();
@@ -37,6 +42,7 @@ bool Exercise4Module::init()
                 ok = false;
         }
     }
+
     return ok;
 }
 
@@ -45,8 +51,11 @@ bool Exercise4Module::cleanUp()
     vertexBuffer.Reset();
     rootSignature.Reset();
     pso.Reset();
+
     texture.Reset();
     textureSRV = UINT32_MAX;
+
+    currentSampler = ModuleSamplers::Type::Linear_Wrap;
     return true;
 }
 
@@ -55,15 +64,32 @@ void Exercise4Module::render()
     D3D12Module* d3d12 = app->getD3D12Module();
     ModuleCamera* camera = app->getCamera();
 
+    // Sampler selector
+    ImGui::Begin("Texture Sampler");
+
+    static const char* names[] =
+    {
+        "Linear Wrap",  "Point Wrap",
+        "Linear Clamp", "Point Clamp",
+        "Linear Mirror","Point Mirror",
+        "Linear Border","Point Border"
+    };
+
+    int idx = (int)currentSampler;
+    if (ImGui::Combo("Sampler", &idx, names, IM_ARRAYSIZE(names)))
+        currentSampler = (ModuleSamplers::Type)idx;
+
+    ImGui::End();
+
     ID3D12GraphicsCommandList* cmd = d3d12->getCommandList();
     cmd->Reset(d3d12->getCommandAllocator(), pso.Get());
 
+    // Back buffer: present -> render target
     CD3DX12_RESOURCE_BARRIER barrier =
         CD3DX12_RESOURCE_BARRIER::Transition(
             d3d12->getBackBuffer(),
             D3D12_RESOURCE_STATE_PRESENT,
             D3D12_RESOURCE_STATE_RENDER_TARGET);
-
     cmd->ResourceBarrier(1, &barrier);
 
     const unsigned w = d3d12->getWindowWidth();
@@ -72,10 +98,9 @@ void Exercise4Module::render()
     Matrix model = Matrix::Identity;
     camera->setAspectRatio((h > 0) ? (float(w) / float(h)) : 1.0f);
 
-    Matrix view = camera->getViewMatrix();
-    Matrix proj = camera->getProjectionMatrix();
-
-    Matrix mvp = (model * view * proj).Transpose();
+    const Matrix view = camera->getViewMatrix();
+    const Matrix proj = camera->getProjectionMatrix();
+    const Matrix mvp = (model * view * proj).Transpose();
 
     D3D12_VIEWPORT vp{ 0, 0, float(w), float(h), 0.0f, 1.0f };
     D3D12_RECT scissor{ 0, 0, (LONG)w, (LONG)h };
@@ -83,7 +108,7 @@ void Exercise4Module::render()
     auto rtv = d3d12->getRenderTargetDescriptor();
     auto dsv = d3d12->getDepthStencilDescriptor();
 
-    float clearColor[4] = { 0.2f, 0.2f, 0.2f, 1.0f };
+    const float clearColor[4] = { 0.2f, 0.2f, 0.2f, 1.0f };
 
     cmd->OMSetRenderTargets(1, &rtv, false, &dsv);
     cmd->ClearRenderTargetView(rtv, clearColor, 0, nullptr);
@@ -96,18 +121,26 @@ void Exercise4Module::render()
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     cmd->IASetVertexBuffers(0, 1, &vbView);
 
-    // Bind SRV heap (CBV/SRV/UAV)
-    ID3D12DescriptorHeap* heaps[] = { app->getShaderDescriptors()->getHeap() };
-    cmd->SetDescriptorHeaps(1, heaps);
+    // Bind descriptor heaps (SRV + Sampler)
+    ID3D12DescriptorHeap* heaps[] =
+    {
+        app->getShaderDescriptors()->getHeap(),
+        app->getSamplers()->getHeap()
+    };
+    cmd->SetDescriptorHeaps(_countof(heaps), heaps);
 
-    cmd->SetGraphicsRoot32BitConstants(0, sizeof(Matrix) / 4, &mvp, 0);
+    // Root bindings
+    cmd->SetGraphicsRoot32BitConstants(0, sizeof(Matrix) / 4, (void*)&mvp, 0);
+    cmd->SetGraphicsRootDescriptorTable(1, app->getShaderDescriptors()->getGPUHandle(textureSRV));
+    cmd->SetGraphicsRootDescriptorTable(2, app->getSamplers()->getGPUHandle(currentSampler));
+
     cmd->DrawInstanced(6, 1, 0, 0);
 
+    // Back buffer: render target -> present
     barrier = CD3DX12_RESOURCE_BARRIER::Transition(
         d3d12->getBackBuffer(),
         D3D12_RESOURCE_STATE_RENDER_TARGET,
         D3D12_RESOURCE_STATE_PRESENT);
-
     cmd->ResourceBarrier(1, &barrier);
 
     cmd->Close();
@@ -128,9 +161,8 @@ bool Exercise4Module::createVertexBuffer()
         {{ 1.f, -1.f, 0.f}, { 1.2f,  1.2f}},
     };
 
-    auto* resources = app->getResources();
+    ModuleResources* resources = app->getResources();
     vertexBuffer = resources->createDefaultBuffer(vertices, sizeof(vertices), "QuadVB");
-
     if (!vertexBuffer)
         return false;
 
@@ -143,14 +175,20 @@ bool Exercise4Module::createVertexBuffer()
 
 bool Exercise4Module::createRootSignature()
 {
-    // Root param 0: MVP constants (b0)
-    CD3DX12_ROOT_PARAMETER params[2] = {};
+    CD3DX12_ROOT_PARAMETER params[3] = {};
+
+    // b0: MVP constants
     params[0].InitAsConstants(sizeof(Matrix) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
 
-    // Root param 1: SRV table (t0)
+    // t0: texture SRV table
     CD3DX12_DESCRIPTOR_RANGE srvRange = {};
     srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
     params[1].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_PIXEL);
+
+    // s0: sampler table
+    CD3DX12_DESCRIPTOR_RANGE sampRange = {};
+    sampRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 1, 0);
+    params[2].InitAsDescriptorTable(1, &sampRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
     CD3DX12_ROOT_SIGNATURE_DESC desc;
     desc.Init(
@@ -166,9 +204,9 @@ bool Exercise4Module::createRootSignature()
     return SUCCEEDED(
         app->getD3D12Module()->getDevice()->CreateRootSignature(
             0, blob->GetBufferPointer(), blob->GetBufferSize(),
-            IID_PPV_ARGS(&rootSignature)));
+            IID_PPV_ARGS(&rootSignature))
+    );
 }
-
 
 bool Exercise4Module::createPipelineState()
 {
@@ -191,16 +229,20 @@ bool Exercise4Module::createPipelineState()
     psoDesc.VS = { vs.data(), vs.size() };
     psoDesc.PS = { ps.data(), ps.size() };
     psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+
     psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
     psoDesc.NumRenderTargets = 1;
     psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+
     psoDesc.SampleDesc = { 1, 0 };
     psoDesc.SampleMask = UINT_MAX;
+
     psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
     psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
 
     return SUCCEEDED(
         app->getD3D12Module()->getDevice()->CreateGraphicsPipelineState(
-            &psoDesc, IID_PPV_ARGS(&pso)));
+            &psoDesc, IID_PPV_ARGS(&pso))
+    );
 }
