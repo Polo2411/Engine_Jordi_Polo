@@ -12,6 +12,7 @@ class TimeManager;
 class ModuleResources;
 class ModuleCamera;
 class ModuleShaderDescriptors;
+class ModuleSamplers;
 
 class Application
 {
@@ -34,6 +35,7 @@ public:
     float    getDeltaTimeSeconds() const { return float(elapsedMilis) * 0.001f; } // dt en segundos
     ModuleCamera* getCamera() const { return camera; }
     ModuleShaderDescriptors* getShaderDescriptors() const { return shaderDescriptors; }
+    ModuleSamplers* getSamplers() const { return samplers; }
 
 private:
     enum { MAX_FPS_TICKS = 30 };
@@ -46,6 +48,7 @@ private:
     ModuleResources* resources = nullptr;
     ModuleCamera* camera = nullptr;
     ModuleShaderDescriptors* shaderDescriptors = nullptr;
+    ModuleSamplers* samplers = nullptr;
 
 
     std::chrono::steady_clock::time_point lastTime;

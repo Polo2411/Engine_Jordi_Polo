@@ -10,6 +10,7 @@
 #include "ModuleResources.h"
 #include "ModuleCamera.h"
 #include "ModuleShaderDescriptors.h"
+#include "ModuleSamplers.h"
 
 Application::Application(int argc, wchar_t** argv, void* hWnd)
 {
@@ -23,6 +24,7 @@ Application::Application(int argc, wchar_t** argv, void* hWnd)
     // ModuleResources ES un Module, así que puede ir en el vector
     modules.push_back(resources = new ModuleResources());
     modules.push_back(camera = new ModuleCamera());
+    modules.push_back(samplers = new ModuleSamplers());
     modules.push_back(shaderDescriptors = new ModuleShaderDescriptors());
 
     // Exercices
