@@ -11,6 +11,7 @@ class UIModule;
 class TimeManager;
 class ModuleResources;
 class ModuleCamera;
+class ModuleShaderDescriptors;
 
 class Application
 {
@@ -32,6 +33,7 @@ public:
     uint64_t getElapsedMilis() const { return elapsedMilis; }     // ms del último frame
     float    getDeltaTimeSeconds() const { return float(elapsedMilis) * 0.001f; } // dt en segundos
     ModuleCamera* getCamera() const { return camera; }
+    ModuleShaderDescriptors* getShaderDescriptors() const { return shaderDescriptors; }
 
 private:
     enum { MAX_FPS_TICKS = 30 };
@@ -43,6 +45,8 @@ private:
     TimeManager* timeManager = nullptr;
     ModuleResources* resources = nullptr;
     ModuleCamera* camera = nullptr;
+    ModuleShaderDescriptors* shaderDescriptors = nullptr;
+
 
     std::chrono::steady_clock::time_point lastTime;
     TickList  tickList = {};

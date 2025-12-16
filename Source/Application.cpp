@@ -9,6 +9,7 @@
 #include "TimeManager.h"
 #include "ModuleResources.h"
 #include "ModuleCamera.h"
+#include "ModuleShaderDescriptors.h"
 
 Application::Application(int argc, wchar_t** argv, void* hWnd)
 {
@@ -22,6 +23,8 @@ Application::Application(int argc, wchar_t** argv, void* hWnd)
     // ModuleResources ES un Module, así que puede ir en el vector
     modules.push_back(resources = new ModuleResources());
     modules.push_back(camera = new ModuleCamera());
+    modules.push_back(shaderDescriptors = new ModuleShaderDescriptors());
+
     // Exercices
     //modules.push_back(new Exercise1Module());
     //modules.push_back(new Exercise2Module());
@@ -43,6 +46,7 @@ Application::~Application()
     // 3) No borrar resources ni d3d12 aquí: ya se han borrado en el bucle anterior.
     resources = nullptr;
     d3d12 = nullptr;
+    shaderDescriptors = nullptr;
 
     app = nullptr;
 }
