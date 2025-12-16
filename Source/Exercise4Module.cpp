@@ -7,6 +7,7 @@
 #include "ModuleResources.h"
 #include "ReadData.h"
 #include "d3dx12.h"
+#include "ModuleShaderDescriptors.h"
 
 struct Vertex
 {
@@ -20,6 +21,22 @@ bool Exercise4Module::init()
     ok &= createVertexBuffer();
     ok &= createRootSignature();
     ok &= createPipelineState();
+    if (ok)
+    {
+        ModuleResources* resources = app->getResources();
+        ModuleShaderDescriptors* descriptors = app->getShaderDescriptors();
+
+        texture = resources->createTextureFromFile(L"Assets/Textures/dog.dds");
+        if (!texture)
+            ok = false;
+
+        if (ok)
+        {
+            textureSRV = descriptors->createSRV(texture.Get());
+            if (textureSRV == UINT32_MAX)
+                ok = false;
+        }
+    }
     return ok;
 }
 
@@ -28,6 +45,8 @@ bool Exercise4Module::cleanUp()
     vertexBuffer.Reset();
     rootSignature.Reset();
     pso.Reset();
+    texture.Reset();
+    textureSRV = UINT32_MAX;
     return true;
 }
 
@@ -77,6 +96,10 @@ void Exercise4Module::render()
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     cmd->IASetVertexBuffers(0, 1, &vbView);
 
+    // Bind SRV heap (CBV/SRV/UAV)
+    ID3D12DescriptorHeap* heaps[] = { app->getShaderDescriptors()->getHeap() };
+    cmd->SetDescriptorHeaps(1, heaps);
+
     cmd->SetGraphicsRoot32BitConstants(0, sizeof(Matrix) / 4, &mvp, 0);
     cmd->DrawInstanced(6, 1, 0, 0);
 
@@ -120,16 +143,24 @@ bool Exercise4Module::createVertexBuffer()
 
 bool Exercise4Module::createRootSignature()
 {
-    CD3DX12_ROOT_PARAMETER param;
-    param.InitAsConstants(sizeof(Matrix) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+    // Root param 0: MVP constants (b0)
+    CD3DX12_ROOT_PARAMETER params[2] = {};
+    params[0].InitAsConstants(sizeof(Matrix) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+
+    // Root param 1: SRV table (t0)
+    CD3DX12_DESCRIPTOR_RANGE srvRange = {};
+    srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+    params[1].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
     CD3DX12_ROOT_SIGNATURE_DESC desc;
-    desc.Init(1, &param, 0, nullptr,
-        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+    desc.Init(
+        _countof(params), params,
+        0, nullptr,
+        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
+    );
 
     ComPtr<ID3DBlob> blob;
-    if (FAILED(D3D12SerializeRootSignature(&desc,
-        D3D_ROOT_SIGNATURE_VERSION_1, &blob, nullptr)))
+    if (FAILED(D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, nullptr)))
         return false;
 
     return SUCCEEDED(
@@ -137,6 +168,7 @@ bool Exercise4Module::createRootSignature()
             0, blob->GetBufferPointer(), blob->GetBufferSize(),
             IID_PPV_ARGS(&rootSignature)));
 }
+
 
 bool Exercise4Module::createPipelineState()
 {
