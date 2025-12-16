@@ -46,11 +46,22 @@ bool Exercise3Module::init()
         );
 
         // --- Para que la tecla F tenga algo a lo que enfocar ---
-        // Ajusta el radio si quieres (triángulo: ~2, grid: ~10)
         if (ModuleCamera* cam = app->getCamera())
         {
-            cam->setFocusBounds(Vector3::Zero, 10.0f);
+            // Pivot del objeto: en este ejercicio, el objeto está en el origen
+            Vector3 center = Vector3::Zero;
+
+            // Radio: distancia máxima de un vértice al origen
+            float r0 = vertices[0].position.Length();
+            float r1 = vertices[1].position.Length();
+            float r2 = vertices[2].position.Length();
+
+            float radius = std::max(r0, std::max(r1, r2));
+
+            cam->setFocusBounds(center, radius);
         }
+
+
 
     }
 

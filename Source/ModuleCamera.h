@@ -38,9 +38,8 @@ public:
     Vector3 up() const;
 
 private:
-    // Update helpers
     void handleKeyboard(float dt);
-    void handleMouse();
+    void handleMouse(float dt);
     void handleArrowRotation(float dt);
 
     void recalcProjectionIfNeeded();
@@ -48,6 +47,9 @@ private:
 
     static float clampf(float v, float lo, float hi);
     static float computeVerticalFovFromHorizontal(float hFov, float aspect);
+
+    void applyWheelZoomTicks(float ticks);
+    void applyOrbitPixels(float dx, float dy);
 
 private:
     // --- Camera state ---
@@ -72,7 +74,8 @@ private:
     // --- Movement ---
     float moveSpeed = 4.0f;
     float rotateSpeedDeg = 120.0f;
-    float shiftMultiplier = 3.0f;
+    float shiftMultiplier = 2.0f; // SHIFT duplicates speed
+    float wheelZoomSpeed = 2.0f;
 
     // --- Mouse ---
     bool hasPrevMouse = false;
