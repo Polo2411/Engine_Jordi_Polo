@@ -41,3 +41,11 @@ D3D12_GPU_DESCRIPTOR_HANDLE ModuleShaderDescriptors::getGPUHandle(uint32_t index
 {
     return CD3DX12_GPU_DESCRIPTOR_HANDLE(gpuStart, index, descriptorSize);
 }
+
+uint32_t ModuleShaderDescriptors::allocate()
+{
+    if (nextFreeIndex >= MAX_DESCRIPTORS)
+        return UINT32_MAX;
+
+    return nextFreeIndex++;
+}

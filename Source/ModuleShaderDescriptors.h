@@ -20,6 +20,8 @@ public:
 
     D3D12_CPU_DESCRIPTOR_HANDLE getCPUHandle(uint32_t index) const;
     D3D12_GPU_DESCRIPTOR_HANDLE getGPUHandle(uint32_t index) const;
+    uint32_t allocate();
+
 
 private:
     ComPtr<ID3D12DescriptorHeap> heap;
@@ -29,4 +31,6 @@ private:
     uint32_t descriptorSize = 0;
 
     static constexpr uint32_t MAX_DESCRIPTORS = 256;
+    uint32_t nextFreeIndex = 0;
+
 };
