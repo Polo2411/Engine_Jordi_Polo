@@ -4,6 +4,24 @@
 #include "Application.h"
 #include "D3D12Module.h"
 #include "d3dx12.h"
+#include "DirectXTex.h"
+#include <vector>
+
+namespace
+{
+    bool LoadTextureFile(const std::wstring& filePath, DirectX::ScratchImage& image)
+    {
+        using namespace DirectX;
+
+        if (SUCCEEDED(LoadFromDDSFile(filePath.c_str(), DDS_FLAGS_NONE, nullptr, image)))
+            return true;
+
+        if (SUCCEEDED(LoadFromTGAFile(filePath.c_str(), nullptr, image)))
+            return true;
+
+        return SUCCEEDED(LoadFromWICFile(filePath.c_str(), WIC_FLAGS_NONE, nullptr, image));
+    }
+}
 
 ModuleResources::ModuleResources()
 {
@@ -190,4 +208,116 @@ void ModuleResources::FlushCopyQueue()
         m_fence->SetEventOnCompletion(fenceToWait, m_fenceEvent);
         WaitForSingleObject(m_fenceEvent, INFINITE);
     }
+}
+
+// --------------------------------------------------------------
+// Create the textures from the file function
+// --------------------------------------------------------------
+ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(const std::wstring& filePath, const wchar_t* debugName)
+{
+    if (!m_device || !m_queue)
+        return nullptr;
+
+    DirectX::ScratchImage image;
+    if (!LoadTextureFile(filePath, image))
+        return nullptr;
+
+    const DirectX::TexMetadata meta = image.GetMetadata();
+
+    // Create the final GPU texture in DEFAULT heap (COPY_DEST first)
+    CD3DX12_RESOURCE_DESC texDesc = CD3DX12_RESOURCE_DESC::Tex2D(
+        meta.format,
+        static_cast<UINT64>(meta.width),
+        static_cast<UINT>(meta.height),
+        static_cast<UINT16>(meta.arraySize),
+        static_cast<UINT16>(meta.mipLevels)
+    );
+
+    CD3DX12_HEAP_PROPERTIES defaultHeap(D3D12_HEAP_TYPE_DEFAULT);
+
+    ComPtr<ID3D12Resource> texture;
+    HRESULT hr = m_device->CreateCommittedResource(
+        &defaultHeap,
+        D3D12_HEAP_FLAG_NONE,
+        &texDesc,
+        D3D12_RESOURCE_STATE_COPY_DEST,
+        nullptr,
+        IID_PPV_ARGS(&texture)
+    );
+
+    if (FAILED(hr))
+        return nullptr;
+
+    if (debugName)
+        texture->SetName(debugName);
+
+    // Build subresource data in correct order: for each array item -> for each mip level
+    std::vector<D3D12_SUBRESOURCE_DATA> subresources;
+    subresources.reserve(image.GetImageCount());
+
+    for (size_t item = 0; item < meta.arraySize; ++item)
+    {
+        for (size_t level = 0; level < meta.mipLevels; ++level)
+        {
+            const DirectX::Image* subImg = image.GetImage(level, item, 0);
+            if (!subImg)
+                return nullptr;
+
+            D3D12_SUBRESOURCE_DATA data = {};
+            data.pData = subImg->pixels;
+            data.RowPitch = subImg->rowPitch;
+            data.SlicePitch = subImg->slicePitch;
+            subresources.push_back(data);
+        }
+    }
+
+    // Create staging (UPLOAD) buffer
+    const UINT64 uploadSize = GetRequiredIntermediateSize(texture.Get(), 0, static_cast<UINT>(subresources.size()));
+
+    CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
+    CD3DX12_RESOURCE_DESC uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadSize);
+
+    ComPtr<ID3D12Resource> staging;
+    hr = m_device->CreateCommittedResource(
+        &uploadHeap,
+        D3D12_HEAP_FLAG_NONE,
+        &uploadDesc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&staging)
+    );
+
+    if (FAILED(hr))
+        return nullptr;
+
+    // Record copy commands
+    m_allocator->Reset();
+    m_cmdList->Reset(m_allocator.Get(), nullptr);
+
+    UpdateSubresources(
+        m_cmdList.Get(),
+        texture.Get(),
+        staging.Get(),
+        0, 0,
+        static_cast<UINT>(subresources.size()),
+        subresources.data()
+    );
+
+    // Transition for shader sampling
+    CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+        texture.Get(),
+        D3D12_RESOURCE_STATE_COPY_DEST,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+    );
+    m_cmdList->ResourceBarrier(1, &barrier);
+
+    m_cmdList->Close();
+
+    ID3D12CommandList* lists[] = { m_cmdList.Get() };
+    m_queue->ExecuteCommandLists(1, lists);
+
+    // Ensure upload buffer can be safely released after this function returns
+    FlushCopyQueue();
+
+    return texture;
 }

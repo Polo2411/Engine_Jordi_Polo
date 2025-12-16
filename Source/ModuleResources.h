@@ -2,6 +2,7 @@
 
 #include "Module.h"
 #include "Globals.h"
+#include <string>
 
 // Módulo de ayuda para crear buffers (UPLOAD / DEFAULT) y copiar datos.
 class ModuleResources : public Module
@@ -26,6 +27,10 @@ public:
     ComPtr<ID3D12Resource> createDefaultBuffer(const void* cpuData,
         size_t      dataSize,
         const char* name = nullptr);
+
+    // Loads a texture from disk (DDS/TGA/WIC) and returns it ready for sampling in shaders.
+    ComPtr<ID3D12Resource> createTextureFromFile(const std::wstring& filePath, const wchar_t* debugName = nullptr);
+
 
 private:
     void FlushCopyQueue();
