@@ -1,18 +1,18 @@
-cbuffer Transform : register(b0)
+cbuffer Transforms : register(b0)
 {
     float4x4 mvp;
 };
 
-struct VSOut
+struct VertexOutput
 {
-    float4 pos : SV_POSITION;
-    float2 uv : TEXCOORD;
+    float2 texCoord : TEXCOORD;
+    float4 position : SV_POSITION;
 };
 
-VSOut main(float3 pos : POSITION, float2 uv : TEXCOORD)
+VertexOutput main(float3 position : POSITION, float2 texCoord : TEXCOORD)
 {
-    VSOut o;
-    o.pos = mul(float4(pos, 1.0), mvp);
-    o.uv = uv;
-    return o;
+    VertexOutput output;
+    output.position = mul(float4(position, 1.0f), mvp);
+    output.texCoord = texCoord;
+    return output;
 }

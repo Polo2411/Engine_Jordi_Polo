@@ -4,7 +4,7 @@
 #include "ImGuiPass.h"
 #include "ModuleShaderDescriptors.h"
 #include "ModuleSamplers.h"
-
+#include "Application.h"
 #include <algorithm>
 
 // -------------------- ctor / dtor --------------------

@@ -13,6 +13,7 @@
 #include <d3d12.h>
 #include <d3dcompiler.h>
 #include "d3dx12.h"
+#include <wrl.h>
 
 using namespace DirectX;
 
@@ -40,8 +41,12 @@ bool Exercise3Module::init()
     if (ok)
     {
         D3D12Module* d3d12 = app->getD3D12Module();
+        Microsoft::WRL::ComPtr<ID3D12Device4> device4;
+        if (FAILED(d3d12->getDevice()->QueryInterface(IID_PPV_ARGS(&device4))))
+            return false;
+
         debugDrawPass = std::make_unique<DebugDrawPass>(
-            d3d12->getDevice(),
+            device4.Get(),
             d3d12->getDrawCommandQueue()
         );
 

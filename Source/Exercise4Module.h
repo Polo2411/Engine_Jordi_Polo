@@ -1,12 +1,14 @@
 #pragma once
 
 #include "Module.h"
-#include "ModuleSamplers.h"
+#include "ModuleSamplers.h"   // para ModuleSamplers::Type
+
 #include <d3d12.h>
 #include <wrl.h>
-#include <cstdint>
+#include <memory>
 
-using Microsoft::WRL::ComPtr;
+// Forward declaration
+class DebugDrawPass;
 
 class Exercise4Module : public Module
 {
@@ -24,14 +26,20 @@ private:
     bool createPipelineState();
 
 private:
-    ComPtr<ID3D12Resource>          vertexBuffer;
-    D3D12_VERTEX_BUFFER_VIEW        vbView{};
+    // GPU objects
+    Microsoft::WRL::ComPtr<ID3D12Resource>      vertexBuffer;
+    D3D12_VERTEX_BUFFER_VIEW                   vbView = {};
 
-    ComPtr<ID3D12RootSignature>     rootSignature;
-    ComPtr<ID3D12PipelineState>     pso;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> pso;
 
-    ComPtr<ID3D12Resource>          texture;
-    uint32_t                        textureSRV = UINT32_MAX;
+    // Texture + SRV index
+    Microsoft::WRL::ComPtr<ID3D12Resource> texture;
+    uint32_t textureSRV = UINT32_MAX;
 
-    ModuleSamplers::Type            currentSampler = ModuleSamplers::Type::Linear_Wrap;
+    // Debug draw pass (grid + axes)
+    std::unique_ptr<DebugDrawPass> debugDrawPass;
+
+    // Sampler selection (ImGui)
+    ModuleSamplers::Type currentSampler = ModuleSamplers::Type::Linear_Wrap;
 };

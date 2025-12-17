@@ -6,11 +6,19 @@
 #include "ModuleCamera.h"
 #include "ModuleResources.h"
 #include "ModuleShaderDescriptors.h"
+#include "ModuleSamplers.h"
+#include "TimeManager.h"
 
+#include "DebugDrawPass.h"
+#include "ImGuiPass.h"
 #include "ReadData.h"
+
+#include <d3dcompiler.h>
 #include "d3dx12.h"
 
 #include "imgui.h"
+
+using namespace DirectX;
 
 struct Vertex
 {
@@ -18,6 +26,9 @@ struct Vertex
     Vector2 uv;
 };
 
+// ---------------------------------------------------------
+// init
+// ---------------------------------------------------------
 bool Exercise4Module::init()
 {
     bool ok = true;
@@ -28,24 +39,47 @@ bool Exercise4Module::init()
 
     if (ok)
     {
+        D3D12Module* d3d12 = app->getD3D12Module();
+
+        // DebugDrawPass igual que Exercise3
+        Microsoft::WRL::ComPtr<ID3D12Device4> device4;
+        if (FAILED(d3d12->getDevice()->QueryInterface(IID_PPV_ARGS(&device4))))
+            return false;
+
+        debugDrawPass = std::make_unique<DebugDrawPass>(
+            device4.Get(),
+            d3d12->getDrawCommandQueue()
+        );
+
+        // Texture
         ModuleResources* resources = app->getResources();
         ModuleShaderDescriptors* descriptors = app->getShaderDescriptors();
 
-        texture = resources->createTextureFromFile(L"Assets/Textures/dog.dds");
+        // OJO: tu engine.sln está en Source/, así que el working dir suele ser build/out/...,
+        // y este path relativo suele funcionar bien:
+        texture = resources->createTextureFromFile(L"../Game/Assets/Textures/dog.dds");
         if (!texture)
-            ok = false;
+            return false;
 
-        if (ok)
+        textureSRV = descriptors->createSRV(texture.Get());
+        if (textureSRV == UINT32_MAX)
+            return false;
+
+        // (Opcional) foco para tecla F y similares
+        if (ModuleCamera* cam = app->getCamera())
         {
-            textureSRV = descriptors->createSRV(texture.Get());
-            if (textureSRV == UINT32_MAX)
-                ok = false;
+            Vector3 center = Vector3::Zero;
+            float radius = 1.5f;
+            cam->setFocusBounds(center, radius);
         }
     }
 
     return ok;
 }
 
+// ---------------------------------------------------------
+// cleanUp
+// ---------------------------------------------------------
 bool Exercise4Module::cleanUp()
 {
     vertexBuffer.Reset();
@@ -55,99 +89,168 @@ bool Exercise4Module::cleanUp()
     texture.Reset();
     textureSRV = UINT32_MAX;
 
+    debugDrawPass.reset();
+
     currentSampler = ModuleSamplers::Type::Linear_Wrap;
     return true;
 }
 
+// ---------------------------------------------------------
+// render
+// ---------------------------------------------------------
 void Exercise4Module::render()
 {
     D3D12Module* d3d12 = app->getD3D12Module();
-    ModuleCamera* camera = app->getCamera();
+    ID3D12GraphicsCommandList* commandList = d3d12->getCommandList();
 
-    // Sampler selector
-    ImGui::Begin("Texture Sampler");
+    commandList->Reset(d3d12->getCommandAllocator(), pso.Get());
 
-    static const char* names[] =
-    {
-        "Linear Wrap",  "Point Wrap",
-        "Linear Clamp", "Point Clamp",
-        "Linear Mirror","Point Mirror",
-        "Linear Border","Point Border"
-    };
-
-    int idx = (int)currentSampler;
-    if (ImGui::Combo("Sampler", &idx, names, IM_ARRAYSIZE(names)))
-        currentSampler = (ModuleSamplers::Type)idx;
-
-    ImGui::End();
-
-    ID3D12GraphicsCommandList* cmd = d3d12->getCommandList();
-    cmd->Reset(d3d12->getCommandAllocator(), pso.Get());
-
-    // Back buffer: present -> render target
+    // Backbuffer: PRESENT -> RENDER_TARGET
     CD3DX12_RESOURCE_BARRIER barrier =
         CD3DX12_RESOURCE_BARRIER::Transition(
             d3d12->getBackBuffer(),
             D3D12_RESOURCE_STATE_PRESENT,
             D3D12_RESOURCE_STATE_RENDER_TARGET);
-    cmd->ResourceBarrier(1, &barrier);
+    commandList->ResourceBarrier(1, &barrier);
 
-    const unsigned w = d3d12->getWindowWidth();
-    const unsigned h = d3d12->getWindowHeight();
+    const unsigned width = d3d12->getWindowWidth();
+    const unsigned height = d3d12->getWindowHeight();
 
+    // -------- Camera matrices --------
     Matrix model = Matrix::Identity;
-    camera->setAspectRatio((h > 0) ? (float(w) / float(h)) : 1.0f);
 
-    const Matrix view = camera->getViewMatrix();
-    const Matrix proj = camera->getProjectionMatrix();
-    const Matrix mvp = (model * view * proj).Transpose();
+    Matrix view = Matrix::Identity;
+    Matrix proj = Matrix::Identity;
 
-    D3D12_VIEWPORT vp{ 0, 0, float(w), float(h), 0.0f, 1.0f };
-    D3D12_RECT scissor{ 0, 0, (LONG)w, (LONG)h };
+    if (ModuleCamera* cam = app->getCamera())
+    {
+        cam->setAspectRatio((height > 0) ? (float(width) / float(height)) : 1.0f);
+        view = cam->getViewMatrix();
+        proj = cam->getProjectionMatrix();
+    }
+    else
+    {
+        view = Matrix::CreateLookAt(Vector3(0.0f, 2.0f, 6.0f), Vector3::Zero, Vector3::Up);
+        proj = Matrix::CreatePerspectiveFieldOfView(XM_PIDIV4,
+            (height > 0) ? (float(width) / float(height)) : 1.0f,
+            0.1f, 1000.0f);
+    }
 
-    auto rtv = d3d12->getRenderTargetDescriptor();
-    auto dsv = d3d12->getDepthStencilDescriptor();
+    Matrix mvp = (model * view * proj).Transpose();
 
-    const float clearColor[4] = { 0.2f, 0.2f, 0.2f, 1.0f };
+    // -------- Viewport / Scissor --------
+    D3D12_VIEWPORT viewport = {};
+    viewport.TopLeftX = 0.0f;
+    viewport.TopLeftY = 0.0f;
+    viewport.MinDepth = 0.0f;
+    viewport.MaxDepth = 1.0f;
+    viewport.Width = float(width);
+    viewport.Height = float(height);
 
-    cmd->OMSetRenderTargets(1, &rtv, false, &dsv);
-    cmd->ClearRenderTargetView(rtv, clearColor, 0, nullptr);
-    cmd->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+    D3D12_RECT scissor = {};
+    scissor.left = 0;
+    scissor.top = 0;
+    scissor.right = LONG(width);
+    scissor.bottom = LONG(height);
 
-    cmd->SetGraphicsRootSignature(rootSignature.Get());
-    cmd->RSSetViewports(1, &vp);
-    cmd->RSSetScissorRects(1, &scissor);
+    // -------- Clear --------
+    float clearColor[] = { 0.05f, 0.05f, 0.06f, 1.0f };
 
-    cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    cmd->IASetVertexBuffers(0, 1, &vbView);
+    D3D12_CPU_DESCRIPTOR_HANDLE rtv = d3d12->getRenderTargetDescriptor();
+    D3D12_CPU_DESCRIPTOR_HANDLE dsv = d3d12->getDepthStencilDescriptor();
 
-    // Bind descriptor heaps (SRV + Sampler)
+    commandList->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
+    commandList->ClearRenderTargetView(rtv, clearColor, 0, nullptr);
+    commandList->ClearDepthStencilView(
+        dsv,
+        D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
+        1.0f, 0, 0, nullptr);
+
+    // -------- Draw textured quad --------
+    commandList->SetGraphicsRootSignature(rootSignature.Get());
+    commandList->RSSetViewports(1, &viewport);
+    commandList->RSSetScissorRects(1, &scissor);
+
+    commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    commandList->IASetVertexBuffers(0, 1, &vbView);
+
+    // Bind descriptor heaps (SRV + Sampler)  -> IMPORTANTE
     ID3D12DescriptorHeap* heaps[] =
     {
         app->getShaderDescriptors()->getHeap(),
         app->getSamplers()->getHeap()
     };
-    cmd->SetDescriptorHeaps(_countof(heaps), heaps);
+    commandList->SetDescriptorHeaps(_countof(heaps), heaps);
 
     // Root bindings
-    cmd->SetGraphicsRoot32BitConstants(0, sizeof(Matrix) / 4, (void*)&mvp, 0);
-    cmd->SetGraphicsRootDescriptorTable(1, app->getShaderDescriptors()->getGPUHandle(textureSRV));
-    cmd->SetGraphicsRootDescriptorTable(2, app->getSamplers()->getGPUHandle(currentSampler));
+    commandList->SetGraphicsRoot32BitConstants(0, sizeof(Matrix) / 4, &mvp, 0);
+    commandList->SetGraphicsRootDescriptorTable(1, app->getShaderDescriptors()->getGPUHandle(textureSRV));
+    commandList->SetGraphicsRootDescriptorTable(2, app->getSamplers()->getGPUHandle(currentSampler));
 
-    cmd->DrawInstanced(6, 1, 0, 0);
+    commandList->DrawInstanced(6, 1, 0, 0);
 
-    // Back buffer: render target -> present
+    // -------- DebugDraw (grid + axes) --------
+    dd::xzSquareGrid(-50.0f, 50.0f, 0.0f, 1.0f, dd::colors::LightGray);
+    dd::axisTriad(ddConvert(Matrix::Identity), 0.1f, 1.0f);
+
+    if (debugDrawPass)
+        debugDrawPass->record(commandList, width, height, view, proj);
+
+    // -------- ImGui (IGUAL que Exercise3) --------
+    if (ImGuiPass* ui = d3d12->getImGuiPass())
+    {
+        TimeManager* tm = app->getTimeManager();
+
+        ImGui::Begin("Exercise 4");
+        ImGui::Text("Textured quad + sampler");
+
+        static const char* names[] =
+        {
+            "Linear Wrap",  "Point Wrap",
+            "Linear Clamp", "Point Clamp",
+            "Linear Mirror","Point Mirror",
+            "Linear Border","Point Border"
+        };
+
+        int idx = (int)currentSampler;
+        if (ImGui::Combo("Sampler", &idx, names, IM_ARRAYSIZE(names)))
+            currentSampler = (ModuleSamplers::Type)idx;
+
+        ImGui::Separator();
+        if (tm)
+        {
+            ImGui::Text("FPS (avg): %.1f", tm->getFPS());
+            ImGui::Text("Avg ms:   %.2f", tm->getAvgFrameMs());
+        }
+        else
+        {
+            ImGui::Text("ImGui FPS: %.1f", ImGui::GetIO().Framerate);
+        }
+
+        ImGui::End();
+
+        ui->record(commandList); // <- ESTO evita el assert de imgui.cpp
+    }
+
+    // Backbuffer: RENDER_TARGET -> PRESENT
     barrier = CD3DX12_RESOURCE_BARRIER::Transition(
         d3d12->getBackBuffer(),
         D3D12_RESOURCE_STATE_RENDER_TARGET,
         D3D12_RESOURCE_STATE_PRESENT);
-    cmd->ResourceBarrier(1, &barrier);
+    commandList->ResourceBarrier(1, &barrier);
 
-    cmd->Close();
-    ID3D12CommandList* lists[] = { cmd };
-    d3d12->getDrawCommandQueue()->ExecuteCommandLists(1, lists);
+    if (SUCCEEDED(commandList->Close()))
+    {
+        ID3D12CommandList* commandLists[] = { commandList };
+        d3d12->getDrawCommandQueue()->ExecuteCommandLists(
+            UINT(std::size(commandLists)),
+            commandLists);
+    }
 }
 
+// ---------------------------------------------------------
+// createVertexBuffer
+// ---------------------------------------------------------
 bool Exercise4Module::createVertexBuffer()
 {
     static const Vertex vertices[6] =
@@ -173,6 +276,9 @@ bool Exercise4Module::createVertexBuffer()
     return true;
 }
 
+// ---------------------------------------------------------
+// createRootSignature
+// ---------------------------------------------------------
 bool Exercise4Module::createRootSignature()
 {
     CD3DX12_ROOT_PARAMETER params[3] = {};
@@ -197,7 +303,7 @@ bool Exercise4Module::createRootSignature()
         D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
     );
 
-    ComPtr<ID3DBlob> blob;
+    Microsoft::WRL::ComPtr<ID3DBlob> blob;
     if (FAILED(D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, nullptr)))
         return false;
 
@@ -208,6 +314,9 @@ bool Exercise4Module::createRootSignature()
     );
 }
 
+// ---------------------------------------------------------
+// createPipelineState
+// ---------------------------------------------------------
 bool Exercise4Module::createPipelineState()
 {
     D3D12_INPUT_ELEMENT_DESC layout[] =
