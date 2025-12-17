@@ -77,6 +77,10 @@ bool D3D12Module::cleanUp()
 
 void D3D12Module::preRender()
 {
+    // Si estamos minimizados o sin tamaño válido, no tocamos swapchain ni ImGui
+    if (minimized || windowWidth == 0 || windowHeight == 0)
+        return;
+
     currentBackBufferIdx = swapChain->GetCurrentBackBufferIndex();
 
     // Si este backbuffer aún está en uso por la GPU (tiene fence pendiente), esperamos.
@@ -102,6 +106,9 @@ void D3D12Module::preRender()
 
 void D3D12Module::postRender()
 {
+    if (minimized || windowWidth == 0 || windowHeight == 0)
+        return;
+
     swapChain->Present(1, 0); // vsync ON
     signalDrawQueue();
 }
@@ -117,7 +124,7 @@ UINT D3D12Module::signalDrawQueue()
 
 void D3D12Module::flush()
 {
-    if (!drawCommandQueue || !drawFence) return;
+    if (!drawCommandQueue || !drawFence || !drawEvent) return;
 
     drawCommandQueue->Signal(drawFence.Get(), ++drawFenceCounter);
     drawFence->SetEventOnCompletion(drawFenceCounter, drawEvent);
@@ -129,6 +136,10 @@ void D3D12Module::flush()
 
 void D3D12Module::resize()
 {
+    // Si minimizado, no hacemos ResizeBuffers
+    if (minimized)
+        return;
+
     unsigned width, height;
     getWindowSize(width, height);
 
@@ -418,7 +429,6 @@ void D3D12Module::bindShaderVisibleHeaps(ID3D12GraphicsCommandList* cmdList)
     if (count > 0)
         cmdList->SetDescriptorHeaps(count, heaps);
 }
-
 
 // -------------------- getters --------------------
 

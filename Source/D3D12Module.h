@@ -26,6 +26,10 @@ public:
     void flush();
     void resize();
 
+    // --- NUEVO: minimized flag ---
+    void setMinimized(bool v) { minimized = v; }
+    bool isMinimized() const { return minimized; }
+
     // --- Getters DX12 ---
     ID3D12Device* getDevice() { return device.Get(); }
     ID3D12GraphicsCommandList* getCommandList() { return commandList.Get(); }
@@ -50,7 +54,6 @@ public:
 
     void bindShaderVisibleHeaps(ID3D12GraphicsCommandList* cmdList);
 
-
 private:
     void getWindowSize(unsigned& width, unsigned& height);
 
@@ -67,6 +70,8 @@ private:
 
 private:
     HWND hWnd = nullptr;
+
+    bool minimized = false; // <-- NUEVO
 
     ComPtr<IDXGIFactory6> factory;
     ComPtr<ID3D12Device> device;
@@ -88,7 +93,7 @@ private:
     UINT drawFenceCounter = 0;
     UINT drawFenceValues[kBufferCount] = {}; // fence value que corresponde al último frame enviado en ese backbuffer
 
-    // --- NUEVO: tracking de frames por backbuffer ---
+    // --- tracking de frames por backbuffer ---
     unsigned frameValues[kBufferCount] = {};   // frameIndex asociado al último uso de ese backbuffer
     unsigned frameIndex = 0;                   // contador de frames (CPU)
     unsigned lastCompletedFrame = 0;           // último frame completado (seguro para liberar)

@@ -11,7 +11,7 @@
 #include <shellapi.h>
 
 #include "dxgidebug.h"
-
+#include "D3D12Module.h"
 #include "Keyboard.h"
 #include "Mouse.h"
 
@@ -92,7 +92,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     return (int)msg.wParam;
 }
 
-
 //
 //  FUNCTION: MyRegisterClass()
 //
@@ -104,17 +103,17 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 
     wcex.cbSize = sizeof(WNDCLASSEX);
 
-    wcex.style          = CS_HREDRAW | CS_VREDRAW;
-    wcex.lpfnWndProc    = WndProc;
-    wcex.cbClsExtra     = 0;
-    wcex.cbWndExtra     = 0;
-    wcex.hInstance      = hInstance;
-    wcex.hIcon          = LoadIcon(hInstance, NULL); 
-    wcex.hCursor        = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground  = (HBRUSH)(COLOR_WINDOW+1);
-    wcex.lpszMenuName   = NULL; 
-    wcex.lpszClassName  = szWindowClass;
-    wcex.hIconSm        = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
+    wcex.style = CS_HREDRAW | CS_VREDRAW;
+    wcex.lpfnWndProc = WndProc;
+    wcex.cbClsExtra = 0;
+    wcex.cbWndExtra = 0;
+    wcex.hInstance = hInstance;
+    wcex.hIcon = LoadIcon(hInstance, NULL);
+    wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wcex.lpszMenuName = NULL;
+    wcex.lpszClassName = szWindowClass;
+    wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
     return RegisterClassExW(&wcex);
 }
@@ -124,59 +123,78 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 //
 //   PURPOSE: Saves instance handle and creates main window
 //
-//   COMMENTS:
-//
-//        In this function, we save the instance handle in a global variable and
-//        create and display the main program window.
-//
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
-   hInst = hInstance; // Store instance handle in our global variable
+    hInst = hInstance; // Store instance handle in our global variable
 
-   HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-      CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, nullptr, nullptr, hInstance, nullptr);
+    HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+        nullptr, nullptr, hInstance, nullptr);
 
-   if (!hWnd)
-   {
-      return FALSE;
-   }
+    if (!hWnd)
+    {
+        return FALSE;
+    }
 
-   app = new Application(__argc, __wargv, hWnd);
+    app = new Application(__argc, __wargv, hWnd);
 
-   if(!app->init())
-   {
-       delete app;
+    if (!app->init())
+    {
+        delete app;
+        app = nullptr;
+        return FALSE;
+    }
 
-       return FALSE;
-   }
+    // Set the window to be the size of the monitor
+    MONITORINFO monitor = {};
+    monitor.cbSize = sizeof(monitor);
+    GetMonitorInfo(MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST), &monitor);
+    RECT rect = monitor.rcMonitor;
 
-   // Set the window to be the size of the monitor
-   MONITORINFO monitor = {};
-   monitor.cbSize = sizeof(monitor);
-   GetMonitorInfo(MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST), &monitor);
-   RECT rect = monitor.rcMonitor;
-   SetWindowPos(hWnd, nullptr, static_cast<int>(rect.left), static_cast<int>(rect.top), static_cast<int>(rect.left + rect.right), static_cast<int>(rect.top + rect.bottom), SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-   SetWindowPos(hWnd, nullptr, static_cast<int>(rect.left), static_cast<int>(rect.top), static_cast<int>(rect.left + rect.right), static_cast<int>(rect.top + rect.bottom), 0);
+    SetWindowPos(
+        hWnd,
+        nullptr,
+        static_cast<int>(rect.left),
+        static_cast<int>(rect.top),
+        static_cast<int>(rect.left + rect.right),
+        static_cast<int>(rect.top + rect.bottom),
+        SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED
+    );
 
-   ShowWindow(hWnd, nCmdShow);
-   UpdateWindow(hWnd);
+    SetWindowPos(
+        hWnd,
+        nullptr,
+        static_cast<int>(rect.left),
+        static_cast<int>(rect.top),
+        static_cast<int>(rect.left + rect.right),
+        static_cast<int>(rect.top + rect.bottom),
+        0
+    );
 
-   return TRUE;
+    ShowWindow(hWnd, nCmdShow);
+    UpdateWindow(hWnd);
+
+    return TRUE;
 }
 
 //
 //  FUNCTION: WndProc(HWND, UINT, WPARAM, LPARAM)
 //
-//  PURPOSE: Processes messages for the main window.
-//
-//  WM_COMMAND  - process the application menu
-//  WM_PAINT    - Paint the main window
-//  WM_DESTROY  - post a quit message and return
-//
-//
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    if (ImGui_ImplWin32_WndProcHandler(hWnd, message, wParam, lParam))
+    // IMPORTANTE:
+    // ImGui puede "consumir" mensajes. Pero NO queremos que se coma WM_SIZE / WM_DESTROY / etc.
+    const bool imguiConsumed = (ImGui_ImplWin32_WndProcHandler(hWnd, message, wParam, lParam) != 0);
+
+    // Para estos mensajes SIEMPRE dejamos pasar a nuestro switch:
+    const bool mustProcess =
+        (message == WM_SIZE) ||
+        (message == WM_DESTROY) ||
+        (message == WM_CLOSE) ||
+        (message == WM_ENTERSIZEMOVE) ||
+        (message == WM_EXITSIZEMOVE);
+
+    if (imguiConsumed && !mustProcess)
         return true;
 
     switch (message)
@@ -186,6 +204,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         Keyboard::ProcessMessage(message, wParam, lParam);
         Mouse::ProcessMessage(message, wParam, lParam);
         break;
+
     case WM_INPUT:
     case WM_MOUSEMOVE:
     case WM_LBUTTONDOWN:
@@ -200,57 +219,105 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_MOUSEHOVER:
         Mouse::ProcessMessage(message, wParam, lParam);
         break;
+
     case WM_COMMAND:
+    {
+        int wmId = LOWORD(wParam);
+        switch (wmId)
         {
-            int wmId = LOWORD(wParam);
-            // Parse the menu selections:
-            switch (wmId)
+        case IDM_ABOUT:
+            DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
+            break;
+        case IDM_EXIT:
+            DestroyWindow(hWnd);
+            break;
+        default:
+            return DefWindowProc(hWnd, message, wParam, lParam);
+        }
+    }
+    break;
+
+    case WM_PAINT:
+    {
+        if (app)
+            app->update();
+    }
+    break;
+
+    case WM_ENTERSIZEMOVE:
+    {
+        // Mientras arrastras el borde, pausar evita flicker / estados raros
+        if (app) app->setPaused(true);
+    }
+    break;
+
+    case WM_EXITSIZEMOVE:
+    {
+        // Al soltar, hacemos resize real
+        if (app)
+        {
+            app->setPaused(false);
+            if (auto* d3d12 = app->getD3D12Module())
             {
-            case IDM_ABOUT:
-                DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
-                break;
-            case IDM_EXIT:
-                DestroyWindow(hWnd);
-                break;
-            default:
-                return DefWindowProc(hWnd, message, wParam, lParam);
+                d3d12->setMinimized(false);
+                d3d12->resize();
             }
         }
-        break;
-    case WM_PAINT:
+    }
+    break;
+
+    case WM_SIZE:
+    {
+        if (!app) break;
+
+        if (wParam == SIZE_MINIMIZED)
         {
-            app->update();
+            app->setPaused(true);
+            if (auto* d3d12 = app->getD3D12Module())
+                d3d12->setMinimized(true);
         }
+        else
+        {
+            app->setPaused(false);
+
+            if (auto* d3d12 = app->getD3D12Module())
+            {
+                d3d12->setMinimized(false);
+                d3d12->resize();
+            }
+        }
+    }
+    break;
+
+    case WM_CLOSE:
+        DestroyWindow(hWnd);
         break;
+
     case WM_DESTROY:
         PostQuitMessage(0);
         break;
-    case WM_SIZE:
-        if (wParam == SIZE_MINIMIZED) {
-            app->setPaused(true);
-        }
-        else {
-            app->setPaused(false);
 
-        }
-        break;
     case WM_SYSKEYDOWN:
         if (wParam == VK_RETURN && (lParam & 0x60000000) == 0x20000000)
         {
-            // This is where you'd implement the classic ALT+ENTER hotkey for fullscreen toggle
+            // ALT+ENTER fullscreen toggle si algún día lo metes
         }
         Keyboard::ProcessMessage(message, wParam, lParam);
         break;
+
     case WM_KEYDOWN:
         Keyboard::ProcessMessage(message, wParam, lParam);
         break;
+
     case WM_KEYUP:
     case WM_SYSKEYUP:
         Keyboard::ProcessMessage(message, wParam, lParam);
         break;
+
     default:
         return DefWindowProc(hWnd, message, wParam, lParam);
     }
+
     return 0;
 }
 
