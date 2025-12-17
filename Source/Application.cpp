@@ -7,6 +7,7 @@
 #include "Exercise2Module.h"
 #include "Exercise3Module.h"
 #include "Exercise4Module.h"
+#include "Assignment1Module.h"
 #include "TimeManager.h"
 #include "ModuleResources.h"
 #include "ModuleCamera.h"
@@ -32,7 +33,8 @@ Application::Application(int argc, wchar_t** argv, void* hWnd)
     //modules.push_back(new Exercise1Module());
     //modules.push_back(new Exercise2Module());
     //modules.push_back(new Exercise3Module());
-    modules.push_back(new Exercise4Module());
+    //modules.push_back(new Exercise4Module());
+    modules.push_back(new Assignment1Module);
 
 }
 

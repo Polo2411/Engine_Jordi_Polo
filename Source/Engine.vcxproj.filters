@@ -46,6 +46,9 @@
     <ClCompile Include="Exercise4Module.cpp">
       <Filter>ExerciseModules</Filter>
     </ClCompile>
+    <ClCompile Include="Assignment1Module.cpp">
+      <Filter>AssignmentModules</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="3rdParty\imgui-1.89.8\backends\imgui_impl_win32.h" />
@@ -98,6 +101,9 @@
     <ClInclude Include="Exercise4Module.h">
       <Filter>ExerciseModules</Filter>
     </ClInclude>
+    <ClInclude Include="Assignment1Module.h">
+      <Filter>AssignmentModules</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Engine.rc" />
@@ -120,6 +126,12 @@
     <Filter Include="UI">
       <UniqueIdentifier>{ebe87baa-bea9-4a33-90a8-542777be6c5c}</UniqueIdentifier>
     </Filter>
+    <Filter Include="AssignmentModules">
+      <UniqueIdentifier>{f51e4ae5-ece2-4423-aa22-5f1dee723c6d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="AssignmentModules\Shaders">
+      <UniqueIdentifier>{a10370cf-e809-498c-bbac-ac04ca97c097}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Exercise2VS.hlsl">
@@ -139,6 +151,12 @@
     </FxCompile>
     <FxCompile Include="Exercise4PS.hlsl">
       <Filter>ExerciseModules\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Assignment1PS.hlsl">
+      <Filter>AssignmentModules\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Assignment1VS.hlsl">
+      <Filter>AssignmentModules\Shaders</Filter>
     </FxCompile>
   </ItemGroup>
 </Project>
