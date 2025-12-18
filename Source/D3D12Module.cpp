@@ -109,7 +109,7 @@ void D3D12Module::postRender()
     if (minimized || windowWidth == 0 || windowHeight == 0)
         return;
 
-    swapChain->Present(1, 0); // vsync ON
+    swapChain->Present(0, 0); // vsync OFF, Not 60fps clamp
     signalDrawQueue();
 }
 

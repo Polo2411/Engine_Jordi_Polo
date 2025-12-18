@@ -79,38 +79,36 @@ bool Application::init()
 
 void Application::update()
 {
-    using namespace std::chrono_literals;
-
     if (updating) return;
     updating = true;
 
-    // timing
+    // timing (✅ alta resolución)
     auto now = std::chrono::steady_clock::now();
-    elapsedMilis = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(now - lastTime).count();
+    std::chrono::duration<double> dt = now - lastTime;
     lastTime = now;
 
-    const uint64_t maxFrameMs = 250; // 0.25s
-    if (elapsedMilis > maxFrameMs) elapsedMilis = maxFrameMs;
+    elapsedSeconds = dt.count();
 
+    const double maxFrameS = 0.25; // 0.25s
+    if (elapsedSeconds > maxFrameS) elapsedSeconds = maxFrameS;
+
+    // tick history (en segundos)
     tickSum -= tickList[tickIndex];
-    tickSum += elapsedMilis;
-    tickList[tickIndex] = elapsedMilis;
+    tickSum += elapsedSeconds;
+    tickList[tickIndex] = elapsedSeconds;
     tickIndex = (tickIndex + 1) % MAX_FPS_TICKS;
 
     if (!paused)
     {
         for (auto& m : modules) m->update();
 
-        // 1) preRender: D3D12 primero (arranca ImGui frame)
         if (d3d12) d3d12->preRender();
         for (auto& m : modules)
             if (m != d3d12) m->preRender();
 
-        // 2) render: ejercicios / UI primero, D3D12 no dibuja
         for (auto& m : modules)
             if (m != d3d12) m->render();
 
-        // 3) postRender: primero módulos, luego D3D12 (present)
         for (auto& m : modules)
             if (m != d3d12) m->postRender();
         if (d3d12) d3d12->postRender();
@@ -118,6 +116,7 @@ void Application::update()
 
     updating = false;
 }
+
 
 bool Application::cleanUp()
 {

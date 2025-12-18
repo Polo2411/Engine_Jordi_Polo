@@ -41,7 +41,7 @@ bool ModuleCamera::init()
 // ---------------------------------------------------------
 void ModuleCamera::update()
 {
-    float dt = app->getElapsedMilis() * 0.001f;
+    float dt = (float)app->getDeltaTimeSeconds();
     dt = clampf(dt, 0.00001f, 0.25f);
 
     Keyboard& kb = Keyboard::Get();
