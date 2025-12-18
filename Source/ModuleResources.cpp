@@ -211,7 +211,7 @@ void ModuleResources::FlushCopyQueue()
 }
 
 // --------------------------------------------------------------
-// Create the textures from the file function
+// createTextureFromFile (con generación de mipmaps si faltan)
 // --------------------------------------------------------------
 ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(const std::wstring& filePath, const wchar_t* debugName)
 {
@@ -222,7 +222,36 @@ ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(const std::wstring
     if (!LoadTextureFile(filePath, image))
         return nullptr;
 
-    const DirectX::TexMetadata meta = image.GetMetadata();
+    // --- Opción B: metadata limpia ---
+    DirectX::TexMetadata meta = image.GetMetadata();
+
+    // Si la textura no trae mips (típico JPG/PNG/WIC), los generamos con DirectXTex
+    if (meta.mipLevels <= 1)
+    {
+        DirectX::ScratchImage mipChain;
+
+        // TEX_FILTER_DEFAULT suele ser suficiente. Si quieres “más calidad”, puedes probar TEX_FILTER_FANT.
+        HRESULT hrMip = DirectX::GenerateMipMaps(
+            image.GetImages(),
+            image.GetImageCount(),
+            meta,
+            DirectX::TEX_FILTER_DEFAULT,
+            0,              // 0 => generar toda la cadena completa
+            mipChain
+        );
+
+        if (SUCCEEDED(hrMip))
+        {
+            image = std::move(mipChain);
+            meta = image.GetMetadata();
+        }
+        else
+        {
+            // Si falla, no rompemos: seguimos con 1 mip.
+            // (pero para JPG normal debería ir bien)
+            OutputDebugStringA("ModuleResources: GenerateMipMaps FAILED, continuing without mipmaps\n");
+        }
+    }
 
     // Create the final GPU texture in DEFAULT heap (COPY_DEST first)
     CD3DX12_RESOURCE_DESC texDesc = CD3DX12_RESOURCE_DESC::Tex2D(
@@ -272,7 +301,11 @@ ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(const std::wstring
     }
 
     // Create staging (UPLOAD) buffer
-    const UINT64 uploadSize = GetRequiredIntermediateSize(texture.Get(), 0, static_cast<UINT>(subresources.size()));
+    const UINT64 uploadSize = GetRequiredIntermediateSize(
+        texture.Get(),
+        0,
+        static_cast<UINT>(subresources.size())
+    );
 
     CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
     CD3DX12_RESOURCE_DESC uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadSize);

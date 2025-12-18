@@ -54,7 +54,7 @@ bool Assignment1Module::init()
         ModuleResources* resources = app->getResources();
         ModuleShaderDescriptors* descriptors = app->getShaderDescriptors();
 
-        texture = resources->createTextureFromFile(L"../Game/Assets/Textures/dog.dds");
+        texture = resources->createTextureFromFile(L"../Game/Assets/Textures/WizardCat.jpg");
         if (!texture)
             return false;
 

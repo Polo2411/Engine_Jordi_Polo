@@ -31,7 +31,6 @@ public:
     // Loads a texture from disk (DDS/TGA/WIC) and returns it ready for sampling in shaders.
     ComPtr<ID3D12Resource> createTextureFromFile(const std::wstring& filePath, const wchar_t* debugName = nullptr);
 
-
 private:
     void FlushCopyQueue();
 
