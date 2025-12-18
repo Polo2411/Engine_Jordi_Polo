@@ -34,7 +34,7 @@ ModuleResources::~ModuleResources()
 
 bool ModuleResources::init()
 {
-    // Obtenemos device y cola de dibujo desde el D3D12Module
+    // Get device and draw queue from D3D12Module
     D3D12Module* d3d = app ? app->getD3D12Module() : nullptr;
     if (!d3d)
         return false;
@@ -45,7 +45,7 @@ bool ModuleResources::init()
     if (!m_device || !m_queue)
         return false;
 
-    // Command allocator + command list para copiar recursos
+    // Command allocator + command list used for copy/upload operations
     HRESULT hr = m_device->CreateCommandAllocator(
         D3D12_COMMAND_LIST_TYPE_DIRECT,
         IID_PPV_ARGS(&m_allocator));
@@ -59,10 +59,10 @@ bool ModuleResources::init()
         IID_PPV_ARGS(&m_cmdList));
     if (FAILED(hr)) return false;
 
-    // La dejamos cerrada, la abriremos con Reset cuando la usemos
+    // Keep it closed; it will be Reset() before use
     m_cmdList->Close();
 
-    // Fence para sincronizar con la GPU (FlushCopyQueue)
+    // Fence to sync copy work with the GPU (FlushCopyQueue)
     hr = m_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence));
     if (FAILED(hr)) return false;
 
@@ -92,7 +92,7 @@ bool ModuleResources::cleanUp()
 }
 
 // --------------------------------------------------------------
-// UPLOAD BUFFER → CPU writable (heap UPLOAD)
+// UPLOAD BUFFER: CPU-writable (UPLOAD heap)
 // --------------------------------------------------------------
 ComPtr<ID3D12Resource> ModuleResources::createUploadBuffer(
     const void* cpuData,
@@ -125,7 +125,7 @@ ComPtr<ID3D12Resource> ModuleResources::createUploadBuffer(
     }
 
     BYTE* pData = nullptr;
-    CD3DX12_RANGE readRange(0, 0); // no vamos a leer desde CPU
+    CD3DX12_RANGE readRange(0, 0); // CPU will not read from this resource
 
     hr = uploadBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pData));
     if (FAILED(hr))
@@ -138,7 +138,7 @@ ComPtr<ID3D12Resource> ModuleResources::createUploadBuffer(
 }
 
 // --------------------------------------------------------------
-// DEFAULT BUFFER → VRAM (usa staging UPLOAD + CopyResource)
+// DEFAULT BUFFER: VRAM (uses an UPLOAD staging buffer + CopyResource)
 // --------------------------------------------------------------
 ComPtr<ID3D12Resource> ModuleResources::createDefaultBuffer(
     const void* cpuData,
@@ -148,12 +148,12 @@ ComPtr<ID3D12Resource> ModuleResources::createDefaultBuffer(
     if (!m_device || !m_queue)
         return nullptr;
 
-    // 1. crear staging buffer en UPLOAD y rellenarlo
+    // 1) Create and fill staging buffer (UPLOAD)
     ComPtr<ID3D12Resource> uploadBuffer = createUploadBuffer(cpuData, dataSize, nullptr);
     if (!uploadBuffer)
         return nullptr;
 
-    // 2. crear buffer final en DEFAULT
+    // 2) Create final buffer in DEFAULT heap
     ComPtr<ID3D12Resource> defaultBuffer;
 
     CD3DX12_RESOURCE_DESC   bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(dataSize);
@@ -170,7 +170,7 @@ ComPtr<ID3D12Resource> ModuleResources::createDefaultBuffer(
     if (FAILED(hr))
         return nullptr;
 
-    // 3. Copia upload -> default con nuestra command list
+    // 3) Copy UPLOAD -> DEFAULT using the internal command list
     m_allocator->Reset();
     m_cmdList->Reset(m_allocator.Get(), nullptr);
 
@@ -180,7 +180,7 @@ ComPtr<ID3D12Resource> ModuleResources::createDefaultBuffer(
     ID3D12CommandList* lists[] = { m_cmdList.Get() };
     m_queue->ExecuteCommandLists(1, lists);
 
-    // 4. Esperar a que termine la copia
+    // 4) Wait for the copy to finish (so the upload buffer can be released)
     FlushCopyQueue();
 
     if (name)
@@ -193,7 +193,7 @@ ComPtr<ID3D12Resource> ModuleResources::createDefaultBuffer(
 }
 
 // --------------------------------------------------------------
-// FlushCopyQueue → esperar a que terminen las copias
+// FlushCopyQueue: wait for pending copy work to finish
 // --------------------------------------------------------------
 void ModuleResources::FlushCopyQueue()
 {
@@ -211,7 +211,7 @@ void ModuleResources::FlushCopyQueue()
 }
 
 // --------------------------------------------------------------
-// createTextureFromFile (con generación de mipmaps si faltan)
+// createTextureFromFile: loads texture and generates mipmaps if missing
 // --------------------------------------------------------------
 ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(const std::wstring& filePath, const wchar_t* debugName)
 {
@@ -222,21 +222,19 @@ ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(const std::wstring
     if (!LoadTextureFile(filePath, image))
         return nullptr;
 
-    // --- Opción B: metadata limpia ---
     DirectX::TexMetadata meta = image.GetMetadata();
 
-    // Si la textura no trae mips (típico JPG/PNG/WIC), los generamos con DirectXTex
+    // If the texture has no mip chain (common for WIC formats), generate mipmaps
     if (meta.mipLevels <= 1)
     {
         DirectX::ScratchImage mipChain;
 
-        // TEX_FILTER_DEFAULT suele ser suficiente. Si quieres “más calidad”, puedes probar TEX_FILTER_FANT.
         HRESULT hrMip = DirectX::GenerateMipMaps(
             image.GetImages(),
             image.GetImageCount(),
             meta,
             DirectX::TEX_FILTER_DEFAULT,
-            0,              // 0 => generar toda la cadena completa
+            0,
             mipChain
         );
 
@@ -247,13 +245,11 @@ ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(const std::wstring
         }
         else
         {
-            // Si falla, no rompemos: seguimos con 1 mip.
-            // (pero para JPG normal debería ir bien)
             OutputDebugStringA("ModuleResources: GenerateMipMaps FAILED, continuing without mipmaps\n");
         }
     }
 
-    // Create the final GPU texture in DEFAULT heap (COPY_DEST first)
+    // Create final GPU texture in DEFAULT heap (start as COPY_DEST)
     CD3DX12_RESOURCE_DESC texDesc = CD3DX12_RESOURCE_DESC::Tex2D(
         meta.format,
         static_cast<UINT64>(meta.width),
@@ -280,7 +276,7 @@ ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(const std::wstring
     if (debugName)
         texture->SetName(debugName);
 
-    // Build subresource data in correct order: for each array item -> for each mip level
+    // Build subresource list: for each array item, for each mip level
     std::vector<D3D12_SUBRESOURCE_DATA> subresources;
     subresources.reserve(image.GetImageCount());
 
@@ -300,7 +296,7 @@ ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(const std::wstring
         }
     }
 
-    // Create staging (UPLOAD) buffer
+    // Create staging (UPLOAD) buffer for subresource upload
     const UINT64 uploadSize = GetRequiredIntermediateSize(
         texture.Get(),
         0,
@@ -323,7 +319,7 @@ ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(const std::wstring
     if (FAILED(hr))
         return nullptr;
 
-    // Record copy commands
+    // Record upload + transitions
     m_allocator->Reset();
     m_cmdList->Reset(m_allocator.Get(), nullptr);
 
@@ -336,7 +332,7 @@ ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(const std::wstring
         subresources.data()
     );
 
-    // Transition for shader sampling
+    // Transition to shader-readable state
     CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
         texture.Get(),
         D3D12_RESOURCE_STATE_COPY_DEST,
@@ -349,7 +345,7 @@ ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(const std::wstring
     ID3D12CommandList* lists[] = { m_cmdList.Get() };
     m_queue->ExecuteCommandLists(1, lists);
 
-    // Ensure upload buffer can be safely released after this function returns
+    // Ensure staging can be safely released after returning
     FlushCopyQueue();
 
     return texture;

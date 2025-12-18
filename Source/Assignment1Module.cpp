@@ -12,7 +12,7 @@
 #include "ImGuiPass.h"
 #include "ReadData.h"
 
-#include "UIModule.h"   // <- NUEVO
+#include "UIModule.h"
 
 #include <d3dcompiler.h>
 #include "d3dx12.h"
@@ -46,11 +46,13 @@ bool Assignment1Module::init()
         if (FAILED(d3d12->getDevice()->QueryInterface(IID_PPV_ARGS(&device4))))
             return false;
 
+        // DebugDraw pass (grid/axes rendering)
         debugDrawPass = std::make_unique<DebugDrawPass>(
             device4.Get(),
             d3d12->getDrawCommandQueue()
         );
 
+        // Load texture and create SRV in the shader descriptor heap
         ModuleResources* resources = app->getResources();
         ModuleShaderDescriptors* descriptors = app->getShaderDescriptors();
 
@@ -62,6 +64,7 @@ bool Assignment1Module::init()
         if (textureSRV == UINT32_MAX)
             return false;
 
+        // Optional: focus bounds for camera "F" key
         if (ModuleCamera* cam = app->getCamera())
         {
             Vector3 center = Vector3::Zero;
@@ -101,6 +104,7 @@ void Assignment1Module::render()
 
     commandList->Reset(d3d12->getCommandAllocator(), pso.Get());
 
+    // Backbuffer: PRESENT -> RENDER_TARGET
     CD3DX12_RESOURCE_BARRIER barrier =
         CD3DX12_RESOURCE_BARRIER::Transition(
             d3d12->getBackBuffer(),
@@ -111,6 +115,7 @@ void Assignment1Module::render()
     const unsigned width = d3d12->getWindowWidth();
     const unsigned height = d3d12->getWindowHeight();
 
+    // -------- Camera matrices --------
     Matrix model = Matrix::Identity;
 
     Matrix view = Matrix::Identity;
@@ -178,6 +183,7 @@ void Assignment1Module::render()
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     commandList->IASetVertexBuffers(0, 1, &vbView);
 
+    // Bind shader-visible descriptor heaps (SRV heap + Sampler heap)
     ID3D12DescriptorHeap* heaps[] =
     {
         app->getShaderDescriptors()->getHeap(),
@@ -185,6 +191,7 @@ void Assignment1Module::render()
     };
     commandList->SetDescriptorHeaps(_countof(heaps), heaps);
 
+    // Root bindings: MVP constants + SRV table + sampler table
     commandList->SetGraphicsRoot32BitConstants(0, sizeof(Matrix) / 4, &mvp, 0);
     commandList->SetGraphicsRootDescriptorTable(1, app->getShaderDescriptors()->getGPUHandle(textureSRV));
     commandList->SetGraphicsRootDescriptorTable(2, app->getSamplers()->getGPUHandle(currentSampler));
@@ -201,12 +208,13 @@ void Assignment1Module::render()
     if (debugDrawPass)
         debugDrawPass->record(commandList, width, height, view, proj);
 
-    // -------- ImGui: only render draw data here --------
+    // -------- ImGui: only record draw data here --------
     if (ImGuiPass* uiPass = d3d12->getImGuiPass())
     {
         uiPass->record(commandList);
     }
 
+    // Backbuffer: RENDER_TARGET -> PRESENT
     barrier = CD3DX12_RESOURCE_BARRIER::Transition(
         d3d12->getBackBuffer(),
         D3D12_RESOURCE_STATE_RENDER_TARGET,
@@ -257,12 +265,15 @@ bool Assignment1Module::createRootSignature()
 {
     CD3DX12_ROOT_PARAMETER params[3] = {};
 
+    // b0: MVP constants
     params[0].InitAsConstants(sizeof(Matrix) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
 
+    // t0: texture SRV table
     CD3DX12_DESCRIPTOR_RANGE srvRange = {};
     srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
     params[1].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
+    // s0: sampler table
     CD3DX12_DESCRIPTOR_RANGE sampRange = {};
     sampRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 1, 0);
     params[2].InitAsDescriptorTable(1, &sampRange, D3D12_SHADER_VISIBILITY_PIXEL);

@@ -21,9 +21,9 @@
 
 #include "SimpleMath.h"
 
-#include <string>   // <- AÑADIDO
-#include <vector>   // <- AÑADIDO
-#include <d3dcompiler.h> //AÑADIDO
+#include <string>  
+#include <vector>   
+#include <d3dcompiler.h> 
 
 #if USE_PIX
 #include "WinPixEventRuntime/pix3.h"
@@ -38,7 +38,7 @@ using Microsoft::WRL::ComPtr;
 #define LOG(format, ...) log(__FILE__, __LINE__, format, __VA_ARGS__);
 void log(const char file[], int line, const char* format, ...);
 
-const std::vector<std::string>& GetLogLines(); // AÑADIDO
+const std::vector<std::string>& GetLogLines();
 
 #define FRAMES_IN_FLIGHT 3
 

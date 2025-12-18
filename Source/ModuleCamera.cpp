@@ -11,7 +11,7 @@
 namespace
 {
     constexpr float MAX_PITCH = XMConvertToRadians(89.0f);
-    constexpr float MOUSE_SENS = 0.20f; // grados por pixel
+    constexpr float MOUSE_SENS = 0.20f; // degrees per pixel
 }
 
 // ---------------------------------------------------------
@@ -20,11 +20,11 @@ bool ModuleCamera::init()
     setHorizontalFov(XM_PIDIV4);
     setPlaneDistances(0.1f, 200.0f);
 
-    // Pivot inicial: lo que se haya seteado como bounds (por defecto Zero)
+    // Initial pivot: whatever was set as bounds (defaults to Zero)
     orbitPivot = focusCenter;
     orbitDistance = (position - orbitPivot).Length();
 
-    // Arranque Unity-like: mirar al pivot y alinear posición con la orientación resultante
+    // Unity-like start: look at pivot and align position with the resulting orientation
     lookAt(orbitPivot);
     position = orbitPivot - front() * orbitDistance;
     viewDirty = true;
@@ -47,7 +47,7 @@ void ModuleCamera::update()
     Keyboard& kb = Keyboard::Get();
     auto ks = kb.GetState();
 
-    // Focus edge
+    // Press F to focus
     if (ks.F && !prevKeyF)
         focus();
     prevKeyF = ks.F;
@@ -66,8 +66,7 @@ void ModuleCamera::update()
 }
 
 // ---------------------------------------------------------
-// a) While Right-clicking, WASD fps-like movement and free look around must be enabled.
-// e) Holding SHIFT duplicates movement speed.
+// While RMB is held: WASD moves, mouse rotates (free look). SHIFT increases speed.
 void ModuleCamera::handleKeyboard(float dt)
 {
     Keyboard& kb = Keyboard::Get();
@@ -96,7 +95,7 @@ void ModuleCamera::handleKeyboard(float dt)
 }
 
 // ---------------------------------------------------------
-// Flechas (auxiliar): Left/Right corregido para que no vaya invertido
+// Arrow keys: rotate yaw/pitch
 void ModuleCamera::handleArrowRotation(float dt)
 {
     Keyboard& kb = Keyboard::Get();
@@ -119,9 +118,7 @@ void ModuleCamera::handleArrowRotation(float dt)
 }
 
 // ---------------------------------------------------------
-// b) The mouse wheel should zoom in and out.
-// c) Alt+Left click should orbit the object.
-// a) RMB free look around.
+// Mouse wheel: dolly in/out. Alt+LMB: orbit around pivot. RMB: free look.
 void ModuleCamera::handleMouse(float dt)
 {
     (void)dt;
@@ -169,7 +166,7 @@ void ModuleCamera::handleMouse(float dt)
         return;
     }
 
-    // RMB => freelook (rotation)
+    // RMB => free look (rotation)
     if (!ms.rightButton)
     {
         wasRightMouseDown = false;
@@ -235,33 +232,31 @@ void ModuleCamera::setFocusBounds(const Vector3& center, float radius)
 }
 
 // ---------------------------------------------------------
-// d) Pressing “f” should focus the camera on the geometry.
-// Versión con lookAt() + garantía de centrado exacto (sin drift).
+// Focus camera on bounds (center + radius)
 void ModuleCamera::focus()
 {
     orbitPivot = focusCenter;
 
-    // 1) Distancia para encuadrar esfera de radio focusRadius con el FOV vertical
+    // Distance to frame a sphere of radius focusRadius using vertical FOV
     float r = clampf(focusRadius, 0.01f, 100000.0f);
     float dist = r / tanf(vFovRad * 0.5f);
 
-    // Margen tipo Unity
+    // Unity-like margin
     orbitDistance = clampf(dist * 1.25f, 0.2f, 500.0f);
 
-    // 2) Mantén la “dirección” desde la que estabas mirando (Unity feel)
+    // Keep the current viewing direction
     Vector3 dir = position - orbitPivot;
     if (dir.LengthSquared() < 1e-8f)
         dir = Vector3(0, 0, 1);
     dir.Normalize();
 
-    // 3) Coloca cámara en esa dirección a la distancia correcta
+    // Place camera along that direction at the desired distance
     position = orbitPivot + dir * orbitDistance;
 
-    // 4) Fija rotación mirando al pivot
+    // Set rotation to look at the pivot
     lookAt(orbitPivot);
 
-    // 5) GARANTÍA: re-colocar con front() resultante de lookAt
-    //    (esto asegura que el pivot cae EXACTAMENTE en el centro)
+    // Re-place using front() to guarantee the pivot is exactly centered
     position = orbitPivot - front() * orbitDistance;
 
     viewDirty = true;
@@ -275,7 +270,7 @@ void ModuleCamera::lookAt(const Vector3& target)
 
     d.Normalize();
 
-    // Manteniendo convención: vector forward base = (0,0,-1)
+    // Convention: base forward vector = (0,0,-1)
     yawRad = atan2f(d.x, -d.z);
     pitchRad = asinf(clampf(d.y, -1.0f, 1.0f));
     pitchRad = clampf(pitchRad, -MAX_PITCH, MAX_PITCH);
@@ -331,8 +326,7 @@ void ModuleCamera::recalcViewIfNeeded()
 {
     if (!viewDirty) return;
 
-    // View estable: la cámara mira en su dirección front() actual.
-    // Usamos up() para consistencia con la orientación (roll=0).
+    // View matrix from current position/orientation (roll=0)
     view = Matrix::CreateLookAt(position, position + front(), up());
 
     viewDirty = false;

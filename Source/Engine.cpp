@@ -182,11 +182,8 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 //
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    // IMPORTANTE:
-    // ImGui puede "consumir" mensajes. Pero NO queremos que se coma WM_SIZE / WM_DESTROY / etc.
     const bool imguiConsumed = (ImGui_ImplWin32_WndProcHandler(hWnd, message, wParam, lParam) != 0);
 
-    // Para estos mensajes SIEMPRE dejamos pasar a nuestro switch:
     const bool mustProcess =
         (message == WM_SIZE) ||
         (message == WM_DESTROY) ||
@@ -246,14 +243,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     case WM_ENTERSIZEMOVE:
     {
-        // Mientras arrastras el borde, pausar evita flicker / estados raros
         if (app) app->setPaused(true);
     }
     break;
 
     case WM_EXITSIZEMOVE:
     {
-        // Al soltar, hacemos resize real
         if (app)
         {
             app->setPaused(false);
@@ -300,7 +295,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_SYSKEYDOWN:
         if (wParam == VK_RETURN && (lParam & 0x60000000) == 0x20000000)
         {
-            // ALT+ENTER fullscreen toggle si algún día lo metes
+            // ALT+ENTER fullscreen toggle if any day we do it (future)
         }
         Keyboard::ProcessMessage(message, wParam, lParam);
         break;

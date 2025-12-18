@@ -3,6 +3,7 @@
 #include "Module.h"
 #include "DebugDrawPass.h"
 
+// Exercise 3: triangle rendering with depth + DebugDraw + camera integration
 class Exercise3Module : public Module
 {
 public:
@@ -11,6 +12,7 @@ public:
     bool cleanUp() override { return true; }
 
 private:
+    // GPU resource and pipeline setup
     bool createVertexBuffer(void* bufferData, unsigned bufferSize, unsigned stride);
     bool createRootSignature();
     bool createPSO();
@@ -22,5 +24,6 @@ private:
     ComPtr<ID3D12PipelineState>     pso;
     std::unique_ptr<DebugDrawPass>  debugDrawPass;
 
-    Matrix                 mvp;
+    // Cached matrix sent to the shader as root constants
+    Matrix mvp;
 };

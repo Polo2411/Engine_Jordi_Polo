@@ -30,7 +30,7 @@ bool Exercise2Module::createVertexBuffer()
     D3D12Module* d3d = app->getD3D12Module();
     ID3D12Device* device = d3d->getDevice();
 
-    // Triángulo en clip-space
+    // Triangle in clip-space
     Exercise2Vertex vertices[3] =
     {
         { -1.0f, -1.0f, 0.0f },   // 0
@@ -40,7 +40,7 @@ bool Exercise2Module::createVertexBuffer()
 
     const UINT vbSize = sizeof(vertices);
 
-    // Para simplificar: buffer en HEAP UPLOAD (no usamos ModuleResources aquí).
+    // For simplicity: use an UPLOAD heap buffer (no ModuleResources here)
     CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
     CD3DX12_RESOURCE_DESC   resDesc = CD3DX12_RESOURCE_DESC::Buffer(vbSize);
 
@@ -55,9 +55,9 @@ bool Exercise2Module::createVertexBuffer()
         return false;
     }
 
-    // Copia de datos al buffer
+    // Copy CPU data into the buffer
     void* mapped = nullptr;
-    CD3DX12_RANGE readRange(0, 0);   // no leemos desde CPU
+    CD3DX12_RANGE readRange(0, 0);   // CPU will not read from this resource
     vertexBuffer->Map(0, &readRange, &mapped);
     memcpy(mapped, vertices, vbSize);
     vertexBuffer->Unmap(0, nullptr);
@@ -71,7 +71,7 @@ bool Exercise2Module::createVertexBuffer()
 }
 
 // -------------------------------------------------
-// 2) Root Signature vacía
+// 2) Empty Root Signature
 // -------------------------------------------------
 bool Exercise2Module::createRootSignature()
 {
@@ -122,14 +122,14 @@ bool Exercise2Module::createPSO()
     D3D12Module* d3d = app->getD3D12Module();
     ID3D12Device* device = d3d->getDevice();
 
-    // Input Layout: sólo posición
+    // Input layout: position only
     D3D12_INPUT_ELEMENT_DESC inputLayout[] =
     {
         { "MY_POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT,
           0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
     };
 
-    // DXIL de los shaders
+    // DXIL shader bytecode
     auto dataVS = DX::ReadData(L"Exercise2VS.cso");
     auto dataPS = DX::ReadData(L"Exercise2PS.cso");
 
@@ -145,13 +145,13 @@ bool Exercise2Module::createPSO()
     psoDesc.SampleMask = 0xffffffff;
     psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
     psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-    // Depth/stencil se queda a 0 -> desactivado (igual que en el profe)
+    // Depth/stencil left at default (disabled)
 
     return SUCCEEDED(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pso)));
 }
 
 // -------------------------------------------------
-// 4) Render del triángulo
+// 4) Triangle rendering
 // -------------------------------------------------
 void Exercise2Module::render()
 {
@@ -187,7 +187,7 @@ void Exercise2Module::render()
     commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
     commandList->DrawInstanced(3, 1, 0, 0);
 
-    // 🔹 Render de ImGui sobre el mismo RT
+    // Render ImGui on top of the same render target
     if (ImGuiPass* imgui = d3d12->getImGuiPass())
     {
         imgui->record(commandList);
@@ -207,4 +207,3 @@ void Exercise2Module::render()
             UINT(std::size(commandLists)), commandLists);
     }
 }
-

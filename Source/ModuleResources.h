@@ -4,26 +4,26 @@
 #include "Globals.h"
 #include <string>
 
-// Módulo de ayuda para crear buffers (UPLOAD / DEFAULT) y copiar datos.
+// Helper module to create buffers (UPLOAD / DEFAULT) and copy data.
 class ModuleResources : public Module
 {
 public:
     ModuleResources();
     ~ModuleResources() override;
 
-    // --- overrides de Module ---
+    // --- Module overrides ---
     bool init() override;
-    void preRender() override {}        // de momento no hacemos nada
-    void render() override {}           // tampoco
-    void postRender() override {}       // tampoco
+    void preRender() override {}        // currently unused
+    void render() override {}           // currently unused
+    void postRender() override {}       // currently unused
     bool cleanUp() override;
 
-    // Crea un buffer en HEAP UPLOAD (CPU-writable) y lo rellena con cpuData
+    // Creates an UPLOAD heap buffer (CPU-writable) and fills it with cpuData
     ComPtr<ID3D12Resource> createUploadBuffer(const void* cpuData,
         size_t      dataSize,
         const char* name = nullptr);
 
-    // Crea un buffer en HEAP DEFAULT (VRAM), copia los datos vía staging (UPLOAD) y hace flush
+    // Creates a DEFAULT heap buffer (VRAM), uploads via staging (UPLOAD), and flushes
     ComPtr<ID3D12Resource> createDefaultBuffer(const void* cpuData,
         size_t      dataSize,
         const char* name = nullptr);

@@ -37,7 +37,7 @@ void UIModule::preRender()
 
         ImGui::Separator();
 
-        // c) 4 required sampler modes
+        // c) Required sampler modes
         static const char* modes[] =
         {
             "Wrap + Bilinear",

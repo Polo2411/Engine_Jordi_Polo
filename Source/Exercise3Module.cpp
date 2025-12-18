@@ -30,8 +30,8 @@ bool Exercise3Module::init()
     static Vertex vertices[3] =
     {
         { Vector3(-1.0f, -1.0f, 0.0f) },  // 0
-        { Vector3(0.0f,  1.0f, 0.0f) },  // 1
-        { Vector3(1.0f, -1.0f, 0.0f) }   // 2
+        { Vector3(0.0f,  1.0f, 0.0f) },   // 1
+        { Vector3(1.0f, -1.0f, 0.0f) }    // 2
     };
 
     bool ok = createVertexBuffer(&vertices[0], sizeof(vertices), sizeof(Vertex));
@@ -45,34 +45,28 @@ bool Exercise3Module::init()
         if (FAILED(d3d12->getDevice()->QueryInterface(IID_PPV_ARGS(&device4))))
             return false;
 
+        // Debug drawing pass (grid, axes)
         debugDrawPass = std::make_unique<DebugDrawPass>(
             device4.Get(),
             d3d12->getDrawCommandQueue()
         );
 
-        // --- Para que la tecla F tenga algo a lo que enfocar ---
+        // Setup camera focus bounds so the F key works correctly
         if (ModuleCamera* cam = app->getCamera())
         {
-            // Pivot del objeto: en este ejercicio, el objeto está en el origen
             Vector3 center = Vector3::Zero;
 
-            // Radio: distancia máxima de un vértice al origen
             float r0 = vertices[0].position.Length();
             float r1 = vertices[1].position.Length();
             float r2 = vertices[2].position.Length();
 
             float radius = std::max(r0, std::max(r1, r2));
-
             cam->setFocusBounds(center, radius);
         }
-
-
-
     }
 
     return ok;
 }
-
 
 // ---------------------------------------------------------
 // render
@@ -95,7 +89,7 @@ void Exercise3Module::render()
     const unsigned width = d3d12->getWindowWidth();
     const unsigned height = d3d12->getWindowHeight();
 
-    // -------- Camera matrices (preferred) --------
+    // -------- Camera matrices --------
     Matrix model = Matrix::Identity;
 
     Matrix view = Matrix::CreateLookAt(
@@ -111,7 +105,6 @@ void Exercise3Module::render()
 
     if (ModuleCamera* cam = app->getCamera())
     {
-        // Ajusta nombres si tu clase usa otros getters
         view = cam->getViewMatrix();
         proj = cam->getProjectionMatrix();
     }
@@ -161,7 +154,7 @@ void Exercise3Module::render()
 
     commandList->DrawInstanced(3, 1, 0, 0);
 
-    // -------- DebugDraw (grid + axes) --------
+    // -------- Debug drawing (grid + axes) --------
     dd::xzSquareGrid(-50.0f, 50.0f, 0.0f, 1.0f, dd::colors::LightGray);
     dd::axisTriad(ddConvert(Matrix::Identity), 0.1f, 1.0f);
 
@@ -182,8 +175,11 @@ void Exercise3Module::render()
             ImGui::Text("Avg ms:   %.2f", tm->getAvgFrameMs());
             ImGui::Text("dt (real): %.4f s", tm->getRealDeltaTime());
             ImGui::Text("dt (game): %.4f s", tm->getDeltaTime());
-            ImGui::PlotLines("Frame ms", tm->getFrameMsHistory(),
-                (int)TimeManager::kHistorySize, 0, nullptr, 0.0f, 40.0f, ImVec2(0, 60));
+            ImGui::PlotLines(
+                "Frame ms",
+                tm->getFrameMsHistory(),
+                (int)TimeManager::kHistorySize,
+                0, nullptr, 0.0f, 40.0f, ImVec2(0, 60));
         }
         else
         {
@@ -193,7 +189,6 @@ void Exercise3Module::render()
 
         ImGui::End();
 
-        // Render ImGui draw data
         ui->record(commandList);
     }
 
@@ -228,16 +223,14 @@ bool Exercise3Module::createVertexBuffer(
         bufferSize,
         "Triangle");
 
-    bool ok = (vertexBuffer != nullptr);
+    if (!vertexBuffer)
+        return false;
 
-    if (ok)
-    {
-        vertexBufferView.BufferLocation = vertexBuffer->GetGPUVirtualAddress();
-        vertexBufferView.SizeInBytes = bufferSize;
-        vertexBufferView.StrideInBytes = stride;
-    }
+    vertexBufferView.BufferLocation = vertexBuffer->GetGPUVirtualAddress();
+    vertexBufferView.SizeInBytes = bufferSize;
+    vertexBufferView.StrideInBytes = stride;
 
-    return ok;
+    return true;
 }
 
 // ---------------------------------------------------------
@@ -248,6 +241,7 @@ bool Exercise3Module::createRootSignature()
     CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc;
     CD3DX12_ROOT_PARAMETER rootParameters[1];
 
+    // MVP matrix as root constants
     rootParameters[0].InitAsConstants(
         sizeof(Matrix) / sizeof(UINT32), 0);
 

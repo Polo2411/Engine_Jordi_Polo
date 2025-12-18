@@ -7,7 +7,7 @@
 
 ImGuiPass::ImGuiPass(ID3D12Device* device, HWND hwnd)
 {
-    // 1) Contexto de ImGui
+    // 1) Create ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -17,12 +17,11 @@ ImGuiPass::ImGuiPass(ID3D12Device* device, HWND hwnd)
 
     ImGui::StyleColorsDark();
 
-    // 2) Fuentes -> IMPORTANTE para evitar la aserción del atlas
-    //    (puedes cambiarlo luego por una fuente TTF como hace el profe)
+    // 2) Fonts (required to build the font atlas)
     io.Fonts->AddFontDefault();
-    io.Fonts->Build();       // <-- ESTO ES LO QUE TE FALTABA
+    io.Fonts->Build();
 
-    // 3) Heap de descriptores para la textura de fuentes
+    // 3) Descriptor heap for the font texture
     D3D12_DESCRIPTOR_HEAP_DESC desc = {};
     desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     desc.NumDescriptors = 1;
@@ -34,7 +33,7 @@ ImGuiPass::ImGuiPass(ID3D12Device* device, HWND hwnd)
         OutputDebugStringA("ImGuiPass: FAILED to create SRV descriptor heap\n");
     }
 
-    // 4) Backends
+    // 4) Platform and renderer backends
     ImGui_ImplWin32_Init(hwnd);
 
     auto cpuHandle = srvHeap->GetCPUDescriptorHandleForHeapStart();
@@ -42,8 +41,8 @@ ImGuiPass::ImGuiPass(ID3D12Device* device, HWND hwnd)
 
     ImGui_ImplDX12_Init(
         device,
-        FRAMES_IN_FLIGHT,                   // mismo que kBufferCount
-        DXGI_FORMAT_R8G8B8A8_UNORM,         // formato del swapchain
+        FRAMES_IN_FLIGHT,
+        DXGI_FORMAT_R8G8B8A8_UNORM,
         srvHeap.Get(),
         cpuHandle,
         gpuHandle
@@ -59,7 +58,7 @@ ImGuiPass::~ImGuiPass()
 
 void ImGuiPass::startFrame()
 {
-    // 🔹 OBLIGATORIO ANTES DE CUALQUIER ImGui::Begin(...)
+    // Must be called before any ImGui::Begin(...)
     ImGui_ImplDX12_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
@@ -67,7 +66,7 @@ void ImGuiPass::startFrame()
 
 void ImGuiPass::record(ID3D12GraphicsCommandList* cmdList)
 {
-    // Activar heap de SRVs donde está la textura de fuentes
+    // Bind SRV heap containing the font texture
     ID3D12DescriptorHeap* heaps[] = { srvHeap.Get() };
     cmdList->SetDescriptorHeaps(1, heaps);
 

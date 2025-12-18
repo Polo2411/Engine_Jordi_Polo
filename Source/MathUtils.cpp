@@ -3,7 +3,6 @@
 
 void ExtractFrustumPlanes(Vector4 outPlanes[6], const Matrix& viewProjection, bool normalize)
 {
-    // OJO: en DirectX/SimpleMath es común transponer antes de extraer.
     Matrix vp = viewProjection;
     vp.Transpose();
 

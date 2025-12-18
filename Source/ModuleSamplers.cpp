@@ -7,11 +7,14 @@
 
 bool ModuleSamplers::init()
 {
+    // Get D3D12 device from the renderer module
     D3D12Module* d3d12 = app->getD3D12Module();
     ID3D12Device* device = d3d12->getDevice();
 
+    // Descriptor size for sampler heaps
     descriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
 
+    // Create a shader-visible sampler descriptor heap
     D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
     heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
     heapDesc.NumDescriptors = (UINT)Type::Count;
@@ -27,6 +30,7 @@ bool ModuleSamplers::init()
 
     const float borderColor[4] = { 0.f, 0.f, 0.f, 1.f };
 
+    // Helper to build a basic sampler descriptor
     auto makeSampler = [&](D3D12_FILTER filter, D3D12_TEXTURE_ADDRESS_MODE mode)
         {
             D3D12_SAMPLER_DESC s = {};
@@ -46,6 +50,7 @@ bool ModuleSamplers::init()
             return s;
         };
 
+    // Predefined sampler variants (filter × address mode)
     const D3D12_SAMPLER_DESC samplers[] =
     {
         makeSampler(D3D12_FILTER_MIN_MAG_MIP_LINEAR, D3D12_TEXTURE_ADDRESS_MODE_WRAP),
@@ -61,6 +66,7 @@ bool ModuleSamplers::init()
         makeSampler(D3D12_FILTER_MIN_MAG_MIP_POINT,  D3D12_TEXTURE_ADDRESS_MODE_BORDER),
     };
 
+    // Write all sampler descriptors into the heap
     for (uint32_t i = 0; i < (uint32_t)Type::Count; ++i)
     {
         auto cpu = CD3DX12_CPU_DESCRIPTOR_HANDLE(cpuStart, i, descriptorSize);

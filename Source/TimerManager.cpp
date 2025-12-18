@@ -21,7 +21,7 @@ bool TimeManager::init()
 
 void TimeManager::update()
 {
-    // Tiempo real desde el arranque del engine
+    // Real time
     realTimeSinceStartupSeconds = appTimer.readSeconds();
 
     static double lastRealTime = 0.0;
@@ -38,7 +38,7 @@ void TimeManager::update()
 
     lastRealTime = realTimeSinceStartupSeconds;
 
-    // dt de juego (afectado por pausa y timeScale)
+    // dt of the game
     if (paused)
         gameDeltaTimeSeconds = 0.0;
     else
@@ -46,12 +46,12 @@ void TimeManager::update()
 
     gameTimeSeconds += gameDeltaTimeSeconds;
 
-    // Guardar en historial (para ImGui::PlotLines)
+    // Save In historial (for ImGui::PlotLines)
     float frameMs = static_cast<float>(realDeltaTimeSeconds * 1000.0);
     frameMsHistory[historyIndex] = frameMs;
     historyIndex = (historyIndex + 1) % kHistorySize;
 
-    // Media simple de los últimos valores válidos
+    // Average
     float sum = 0.0f;
     size_t cnt = 0;
     for (float v : frameMsHistory)
@@ -79,7 +79,7 @@ void TimeManager::update()
 
 void TimeManager::setTimeScale(float scale)
 {
-    // Limites razonables (puedes ajustarlos)
+    // Limits
     if (scale < 0.0f) scale = 0.0f;
     if (scale > 4.0f) scale = 4.0f;
     timeScale = scale;

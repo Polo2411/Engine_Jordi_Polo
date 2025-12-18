@@ -10,7 +10,7 @@ bool ModuleShaderDescriptors::init()
     D3D12Module* d3d12 = app->getD3D12Module();
     ID3D12Device* device = d3d12->getDevice();
 
-    // Shader-visible CBV/SRV/UAV heap
+    // Shader-visible CBV/SRV/UAV descriptor heap
     D3D12_DESCRIPTOR_HEAP_DESC desc = {};
     desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     desc.NumDescriptors = MAX_DESCRIPTORS;
@@ -51,6 +51,7 @@ D3D12_GPU_DESCRIPTOR_HANDLE ModuleShaderDescriptors::getGPUHandle(uint32_t index
 
 uint32_t ModuleShaderDescriptors::allocate()
 {
+    // Simple linear allocator over the descriptor heap
     if (nextFreeIndex >= MAX_DESCRIPTORS)
         return UINT32_MAX;
 
@@ -66,6 +67,7 @@ uint32_t ModuleShaderDescriptors::createSRV(ID3D12Resource* texture)
     if (index == UINT32_MAX)
         return UINT32_MAX;
 
+    // Basic SRV for a 2D texture with all mip levels
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     srvDesc.Format = texture->GetDesc().Format;
@@ -80,6 +82,6 @@ uint32_t ModuleShaderDescriptors::createSRV(ID3D12Resource* texture)
 
 void ModuleShaderDescriptors::reset()
 {
-    // Allows descriptor reuse (heap memory is not cleared)
+    // Allows descriptor reuse (heap contents are not cleared)
     nextFreeIndex = 0;
 }

@@ -8,6 +8,7 @@
 
 using Microsoft::WRL::ComPtr;
 
+// Exercise 2: basic triangle rendering with a minimal pipeline setup
 class Exercise2Module : public Module
 {
 public:
@@ -16,13 +17,14 @@ public:
     bool cleanUp() override { return true; }
 
 private:
+    // GPU setup steps
     bool createVertexBuffer();
     bool createRootSignature();
     bool createPSO();
 
 private:
-    ComPtr<ID3D12Resource>      vertexBuffer;
-    D3D12_VERTEX_BUFFER_VIEW    vertexBufferView{};
-    ComPtr<ID3D12RootSignature> rootSignature;
-    ComPtr<ID3D12PipelineState> pso;
+    ComPtr<ID3D12Resource>       vertexBuffer;
+    D3D12_VERTEX_BUFFER_VIEW     vertexBufferView{};
+    ComPtr<ID3D12RootSignature>  rootSignature;
+    ComPtr<ID3D12PipelineState>  pso;
 };

@@ -18,39 +18,38 @@ Application::Application(int argc, wchar_t** argv, void* hWnd)
 {
     app = this;
 
+    // Core engine modules (order matters)
     modules.push_back(new ModuleInput((HWND)hWnd));
     modules.push_back(d3d12 = new D3D12Module((HWND)hWnd));
     modules.push_back(timeManager = new TimeManager());
     modules.push_back(ui = new UIModule());
 
-    // ModuleResources ES un Module, así que puede ir en el vector
+    // Rendering-related helpers
     modules.push_back(resources = new ModuleResources());
     modules.push_back(camera = new ModuleCamera());
     modules.push_back(samplers = new ModuleSamplers());
     modules.push_back(shaderDescriptors = new ModuleShaderDescriptors());
 
-    // Exercices
+    // Exercises / assignments
     //modules.push_back(new Exercise1Module());
     //modules.push_back(new Exercise2Module());
     //modules.push_back(new Exercise3Module());
     //modules.push_back(new Exercise4Module());
     modules.push_back(new Assignment1Module);
-
 }
 
 Application::~Application()
 {
-    // 1) Avisar a los módulos para que suelten recursos de GPU, etc.
+    // 1) Notify modules to release GPU/CPU resources
     cleanUp();
 
-    // 2) Destruir TODOS los módulos exactamente una vez
+    // 2) Destroy modules in reverse order
     for (auto it = modules.rbegin(); it != modules.rend(); ++it)
     {
         delete* it;
     }
     modules.clear();
 
-    // 3) No borrar resources ni d3d12 aquí: ya se han borrado en el bucle anterior.
     resources = nullptr;
     d3d12 = nullptr;
     shaderDescriptors = nullptr;
@@ -58,22 +57,19 @@ Application::~Application()
     app = nullptr;
 }
 
-
 bool Application::init()
 {
     bool ret = true;
 
-    // 1) inicializar módulos (incluye D3D12Module)
+    // Initialize all modules
     for (auto it = modules.begin(); it != modules.end() && ret; ++it)
         ret = (*it)->init();
 
-    // 2) inicializar ModuleResources después de que D3D12 esté listo
+    // ModuleResources depends on D3D12 being ready
     if (ret && resources)
-        ret = resources->init();    // 👈 aquí dentro cogerá device + queue de d3d12
+        ret = resources->init();
 
     lastTime = std::chrono::steady_clock::now();
-
-
     return ret;
 }
 
@@ -82,17 +78,17 @@ void Application::update()
     if (updating) return;
     updating = true;
 
-    // timing (✅ alta resolución)
+    // Frame timing
     auto now = std::chrono::steady_clock::now();
     std::chrono::duration<double> dt = now - lastTime;
     lastTime = now;
 
     elapsedSeconds = dt.count();
 
-    const double maxFrameS = 0.25; // 0.25s
+    const double maxFrameS = 0.25;
     if (elapsedSeconds > maxFrameS) elapsedSeconds = maxFrameS;
 
-    // tick history (en segundos)
+    // FPS history (moving average)
     tickSum -= tickList[tickIndex];
     tickSum += elapsedSeconds;
     tickList[tickIndex] = elapsedSeconds;
@@ -100,15 +96,19 @@ void Application::update()
 
     if (!paused)
     {
+        // Update phase
         for (auto& m : modules) m->update();
 
+        // Pre-render phase (D3D12 first)
         if (d3d12) d3d12->preRender();
         for (auto& m : modules)
             if (m != d3d12) m->preRender();
 
+        // Render phase
         for (auto& m : modules)
             if (m != d3d12) m->render();
 
+        // Post-render phase (D3D12 last)
         for (auto& m : modules)
             if (m != d3d12) m->postRender();
         if (d3d12) d3d12->postRender();
@@ -117,10 +117,9 @@ void Application::update()
     updating = false;
 }
 
-
 bool Application::cleanUp()
 {
-    // flush de la cola de dibujo antes de liberar nada
+    // Ensure GPU work is finished before shutdown
     if (d3d12)
         d3d12->flush();
 
@@ -132,5 +131,3 @@ bool Application::cleanUp()
 
     return ret;
 }
-
-

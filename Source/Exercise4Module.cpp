@@ -41,7 +41,7 @@ bool Exercise4Module::init()
     {
         D3D12Module* d3d12 = app->getD3D12Module();
 
-        // DebugDrawPass igual que Exercise3
+        // DebugDraw pass (same setup as Exercise3)
         Microsoft::WRL::ComPtr<ID3D12Device4> device4;
         if (FAILED(d3d12->getDevice()->QueryInterface(IID_PPV_ARGS(&device4))))
             return false;
@@ -51,12 +51,11 @@ bool Exercise4Module::init()
             d3d12->getDrawCommandQueue()
         );
 
-        // Texture
+        // Load texture and create an SRV in the shader-visible heap
         ModuleResources* resources = app->getResources();
         ModuleShaderDescriptors* descriptors = app->getShaderDescriptors();
 
-        // OJO: tu engine.sln está en Source/, así que el working dir suele ser build/out/...,
-        // y este path relativo suele funcionar bien:
+        // Note: working directory is typically build/out/... so this relative path usually works
         texture = resources->createTextureFromFile(L"../Game/Assets/Textures/dog.dds");
         if (!texture)
             return false;
@@ -65,7 +64,7 @@ bool Exercise4Module::init()
         if (textureSRV == UINT32_MAX)
             return false;
 
-        // (Opcional) foco para tecla F y similares
+        // Optional: focus bounds for camera "F" key
         if (ModuleCamera* cam = app->getCamera())
         {
             Vector3 center = Vector3::Zero;
@@ -131,7 +130,8 @@ void Exercise4Module::render()
     else
     {
         view = Matrix::CreateLookAt(Vector3(0.0f, 2.0f, 6.0f), Vector3::Zero, Vector3::Up);
-        proj = Matrix::CreatePerspectiveFieldOfView(XM_PIDIV4,
+        proj = Matrix::CreatePerspectiveFieldOfView(
+            XM_PIDIV4,
             (height > 0) ? (float(width) / float(height)) : 1.0f,
             0.1f, 1000.0f);
     }
@@ -174,7 +174,7 @@ void Exercise4Module::render()
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     commandList->IASetVertexBuffers(0, 1, &vbView);
 
-    // Bind descriptor heaps (SRV + Sampler)  -> IMPORTANTE
+    // Bind shader-visible descriptor heaps (SRV heap + Sampler heap)
     ID3D12DescriptorHeap* heaps[] =
     {
         app->getShaderDescriptors()->getHeap(),
@@ -182,21 +182,21 @@ void Exercise4Module::render()
     };
     commandList->SetDescriptorHeaps(_countof(heaps), heaps);
 
-    // Root bindings
+    // Root bindings: MVP constants + SRV table + sampler table
     commandList->SetGraphicsRoot32BitConstants(0, sizeof(Matrix) / 4, &mvp, 0);
     commandList->SetGraphicsRootDescriptorTable(1, app->getShaderDescriptors()->getGPUHandle(textureSRV));
     commandList->SetGraphicsRootDescriptorTable(2, app->getSamplers()->getGPUHandle(currentSampler));
 
     commandList->DrawInstanced(6, 1, 0, 0);
 
-    // -------- DebugDraw (grid + axes) --------
+    // -------- Debug drawing (grid + axes) --------
     dd::xzSquareGrid(-50.0f, 50.0f, 0.0f, 1.0f, dd::colors::LightGray);
     dd::axisTriad(ddConvert(Matrix::Identity), 0.1f, 1.0f);
 
     if (debugDrawPass)
         debugDrawPass->record(commandList, width, height, view, proj);
 
-    // -------- ImGui (IGUAL que Exercise3) --------
+    // -------- ImGui --------
     if (ImGuiPass* ui = d3d12->getImGuiPass())
     {
         TimeManager* tm = app->getTimeManager();
@@ -229,7 +229,8 @@ void Exercise4Module::render()
 
         ImGui::End();
 
-        ui->record(commandList); // <- ESTO evita el assert de imgui.cpp
+        // Record ImGui draw commands into this command list
+        ui->record(commandList);
     }
 
     // Backbuffer: RENDER_TARGET -> PRESENT

@@ -8,29 +8,34 @@
 
 class ImGuiPass;
 
+// Core Direct3D 12 renderer module (device, swapchain, frame sync)
 class D3D12Module : public Module
 {
 public:
-    static constexpr UINT kBufferCount = 2; // si en tu proyecto ya existe, quita esta línea
+    // Number of swapchain backbuffers
+    static constexpr UINT kBufferCount = 2;
 
 public:
     D3D12Module(HWND wnd);
     ~D3D12Module();
 
+    // Module lifecycle
     bool init() override;
     bool cleanUp() override;
 
+    // Per-frame entry points
     void preRender() override;
     void postRender() override;
 
+    // GPU synchronization helpers
     void flush();
     void resize();
 
-    // --- NUEVO: minimized flag ---
+    // Minimized window handling
     void setMinimized(bool v) { minimized = v; }
     bool isMinimized() const { return minimized; }
 
-    // --- Getters DX12 ---
+    // --- D3D12 accessors ---
     ID3D12Device* getDevice() { return device.Get(); }
     ID3D12GraphicsCommandList* getCommandList() { return commandList.Get(); }
     ID3D12CommandAllocator* getCommandAllocator() { return commandAllocators[currentBackBufferIdx].Get(); }
@@ -40,23 +45,27 @@ public:
     unsigned getWindowWidth() const { return windowWidth; }
     unsigned getWindowHeight() const { return windowHeight; }
 
+    // Current render target / depth-stencil descriptors
     D3D12_CPU_DESCRIPTOR_HANDLE getRenderTargetDescriptor();
     D3D12_CPU_DESCRIPTOR_HANDLE getDepthStencilDescriptor();
 
     ImGuiPass* getImGuiPass() const { return imgui.get(); }
 
-    // --- Fence / sync ---
+    // --- Fence / frame sync ---
     UINT signalDrawQueue();
 
-    // --- Frame tracking (para deferred free / GC por frame) ---
+    // Frame indices for deferred resource management
     unsigned getCurrentFrame() const { return frameIndex; }
     unsigned getLastCompletedFrame() const { return lastCompletedFrame; }
 
+    // Bind shader-visible descriptor heaps (CBV/SRV/UAV + samplers)
     void bindShaderVisibleHeaps(ID3D12GraphicsCommandList* cmdList);
 
 private:
+    // Window size query
     void getWindowSize(unsigned& width, unsigned& height);
 
+    // D3D12 initialization helpers
     void enableDebugLayer();
     bool createFactory();
     bool createDevice(bool useWarp);
@@ -71,7 +80,7 @@ private:
 private:
     HWND hWnd = nullptr;
 
-    bool minimized = false; // <-- NUEVO
+    bool minimized = false;
 
     ComPtr<IDXGIFactory6> factory;
     ComPtr<ID3D12Device> device;
@@ -91,17 +100,18 @@ private:
     HANDLE drawEvent = nullptr;
 
     UINT drawFenceCounter = 0;
-    UINT drawFenceValues[kBufferCount] = {}; // fence value que corresponde al último frame enviado en ese backbuffer
+    UINT drawFenceValues[kBufferCount] = {};
 
-    // --- tracking de frames por backbuffer ---
-    unsigned frameValues[kBufferCount] = {};   // frameIndex asociado al último uso de ese backbuffer
-    unsigned frameIndex = 0;                   // contador de frames (CPU)
-    unsigned lastCompletedFrame = 0;           // último frame completado (seguro para liberar)
+    // Per-backbuffer frame tracking
+    unsigned frameValues[kBufferCount] = {};
+    unsigned frameIndex = 0;
+    unsigned lastCompletedFrame = 0;
 
     unsigned currentBackBufferIdx = 0;
 
     unsigned windowWidth = 0;
     unsigned windowHeight = 0;
 
+    // ImGui renderer pass
     std::unique_ptr<ImGuiPass> imgui;
 };
