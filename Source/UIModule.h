@@ -1,7 +1,8 @@
 #pragma once
+
 #include "Globals.h"
 #include "Module.h"
-#include "imgui.h"
+#include "ModuleSamplers.h" // ModuleSamplers::Type
 
 class UIModule : public Module
 {
@@ -12,10 +13,15 @@ public:
     void preRender() override;
     void render() override {}
 
-    int getSelectedExercise() const { return selectedExercise; }
+    // --- Assignment UI state getters (Assignment1Module will read these) ---
+    bool getShowGrid() const { return showGrid; }
+    bool getShowAxis() const { return showAxis; }
+    ModuleSamplers::Type getSelectedSampler() const { return selectedSampler; }
 
 private:
-    int  selectedExercise = 1;
-    bool showAbout = true;
-    bool showTimeStats = true;
+    bool showGrid = true;
+    bool showAxis = true;
+
+    // Only 4 options required by the assignment
+    ModuleSamplers::Type selectedSampler = ModuleSamplers::Type::Linear_Wrap;
 };

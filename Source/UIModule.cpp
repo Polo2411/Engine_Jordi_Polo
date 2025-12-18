@@ -1,109 +1,71 @@
 #include "Globals.h"
-#include "Application.h"
 #include "UIModule.h"
+
+#include "Application.h"
 #include "TimeManager.h"
+
 #include "imgui.h"
 
 void UIModule::preRender()
 {
-    ImGuiIO& io = ImGui::GetIO();
+    TimeManager* tm = app ? app->getTimeManager() : nullptr;
 
-    // ---------- ABOUT WINDOW (arriba izquierda, movible, con barra y X) ----------
-    if (showAbout)
+    // Single window with exactly what the assignment requires
+    ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(360.0f, 0.0f), ImGuiCond_FirstUseEver);
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDocking;
+
+    if (ImGui::Begin("Rendering Settings", nullptr, flags))
     {
-        // Solo la primera vez que se crea esta ventana
-        ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(550, 0), ImGuiCond_FirstUseEver);
-
-        ImGuiWindowFlags aboutFlags = ImGuiWindowFlags_NoDocking;
-
-        if (ImGui::Begin("About This Engine", &showAbout, aboutFlags))
+        // a) FPS
+        if (tm)
         {
-            ImGui::Text("Master AAA Engine");
-            ImGui::Separator();
-            ImGui::TextWrapped("Educational project for the AAA master's degree.");
-            ImGui::Text("Author: Jordi Polo Tormo");
-            ImGui::Separator();
-            ImGui::Text("License: UPC School Engine");
-            ImGui::Separator();
-            ImGui::Text("Libraries:");
-            ImGui::BulletText("DirectX 12");
-            ImGui::BulletText("Dear ImGui %s", IMGUI_VERSION);
-            ImGui::BulletText("DirectX Tool Kit");
+            ImGui::Text("FPS: %.1f", tm->getFPS());
+            ImGui::Text("Frame Time: %.2f ms", tm->getAvgFrameMs());
         }
-        ImGui::End();
-    }
-
-    // ---------- TIME & FPS WINDOW (arriba derecha, movible, con barra y X) ----------
-    if (!showTimeStats)
-        return;
-
-    TimeManager* time = app->getTimeManager();
-    if (!time)
-        return;
-
-    // Tamaño que queremos aproximadamente
-    const float statsWidth = 360.0f;
-    const float statsHeight = 320.0f;
-
-    // Tamaño inicial (solo la primera vez que aparece)
-    ImGui::SetNextWindowSize(ImVec2(statsWidth, statsHeight), ImGuiCond_FirstUseEver);
-
-    // Posición inicial: esquina superior derecha (solo la primera vez)
-    // x = ancho ventana - statsWidth - margen
-    const float margin = 10.0f;
-    ImGui::SetNextWindowPos(
-        ImVec2(io.DisplaySize.x - statsWidth - margin, margin),
-        ImGuiCond_FirstUseEver
-    );
-
-    ImGui::SetNextWindowBgAlpha(0.85f);
-
-    // MISMO ESTILO DE FLAGS QUE ABOUT: solo NoDocking
-    ImGuiWindowFlags statsFlags = ImGuiWindowFlags_NoDocking;
-
-    if (ImGui::Begin("Time & FPS Stats", &showTimeStats, statsFlags))
-    {
-        ImGui::Text("Real Time: %.3f s", time->getRealTimeSinceStartup());
-        ImGui::Text("Game Time: %.3f s", time->getTime());
-        ImGui::Separator();
-
-        ImGui::Text("FPS: %.1f", time->getFPS());
-        ImGui::Text("Frame Time: %.3f ms", time->getAvgFrameMs());
-
-        ImGui::Separator();
-        ImGui::Text("Delta Times:");
-        ImGui::BulletText("Real dt: %.3f ms", time->getRealDeltaTime() * 1000.0f);
-        ImGui::BulletText("Game dt: %.3f ms", time->getDeltaTime() * 1000.0f);
-
-        ImGui::Separator();
-        ImGui::Text("Frame Time History:");
-        ImGui::PlotLines(
-            "##FrameHistory",
-            time->getFrameMsHistory(),
-            (int)TimeManager::kHistorySize,
-            0,
-            nullptr,
-            0.0f,
-            40.0f,
-            ImVec2(0, 80)
-        );
-
-        ImGui::Separator();
-
-        // ------ GAME CLOCK CONTROLS ------
-        bool paused = time->isPaused();
-        if (ImGui::Checkbox("Paused", &paused))
+        else
         {
-            time->setPaused(paused);
-            OutputDebugStringA(paused ? "TimeManager: Paused ON\n" : "TimeManager: Paused OFF\n");
+            ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
         }
 
-        float scale = time->getTimeScale();
-        if (ImGui::SliderFloat("Time Scale", &scale, 0.0f, 4.0f))
+        ImGui::Separator();
+
+        // b) Options to show/hide the grid and the axis
+        ImGui::Checkbox("Show Grid", &showGrid);
+        ImGui::Checkbox("Show Axis", &showAxis);
+
+        ImGui::Separator();
+
+        // c) 4 required sampler modes
+        static const char* modes[] =
         {
-            time->setTimeScale(scale);
-            OutputDebugStringA("TimeManager: TimeScale changed\n");
+            "Wrap + Bilinear",
+            "Clamp + Bilinear",
+            "Wrap + Point",
+            "Clamp + Point"
+        };
+
+        int mode = 0;
+        switch (selectedSampler)
+        {
+        case ModuleSamplers::Type::Linear_Wrap:  mode = 0; break;
+        case ModuleSamplers::Type::Linear_Clamp: mode = 1; break;
+        case ModuleSamplers::Type::Point_Wrap:   mode = 2; break;
+        case ModuleSamplers::Type::Point_Clamp:  mode = 3; break;
+        default: mode = 0; break;
+        }
+
+        if (ImGui::Combo("Texture Sampling", &mode, modes, IM_ARRAYSIZE(modes)))
+        {
+            switch (mode)
+            {
+            case 0: selectedSampler = ModuleSamplers::Type::Linear_Wrap;  break;
+            case 1: selectedSampler = ModuleSamplers::Type::Linear_Clamp; break;
+            case 2: selectedSampler = ModuleSamplers::Type::Point_Wrap;   break;
+            case 3: selectedSampler = ModuleSamplers::Type::Point_Clamp;  break;
+            default: selectedSampler = ModuleSamplers::Type::Linear_Wrap; break;
+            }
         }
     }
     ImGui::End();

@@ -7,11 +7,12 @@
 #include "ModuleResources.h"
 #include "ModuleShaderDescriptors.h"
 #include "ModuleSamplers.h"
-#include "TimeManager.h"
 
 #include "DebugDrawPass.h"
 #include "ImGuiPass.h"
 #include "ReadData.h"
+
+#include "UIModule.h"   // <- NUEVO
 
 #include <d3dcompiler.h>
 #include "d3dx12.h"
@@ -41,7 +42,6 @@ bool Assignment1Module::init()
     {
         D3D12Module* d3d12 = app->getD3D12Module();
 
-        // DebugDrawPass igual que Exercise3
         Microsoft::WRL::ComPtr<ID3D12Device4> device4;
         if (FAILED(d3d12->getDevice()->QueryInterface(IID_PPV_ARGS(&device4))))
             return false;
@@ -51,12 +51,9 @@ bool Assignment1Module::init()
             d3d12->getDrawCommandQueue()
         );
 
-        // Texture
         ModuleResources* resources = app->getResources();
         ModuleShaderDescriptors* descriptors = app->getShaderDescriptors();
 
-        // OJO: tu engine.sln está en Source/, así que el working dir suele ser build/out/...,
-        // y este path relativo suele funcionar bien:
         texture = resources->createTextureFromFile(L"../Game/Assets/Textures/dog.dds");
         if (!texture)
             return false;
@@ -65,7 +62,6 @@ bool Assignment1Module::init()
         if (textureSRV == UINT32_MAX)
             return false;
 
-        // (Opcional) foco para tecla F y similares
         if (ModuleCamera* cam = app->getCamera())
         {
             Vector3 center = Vector3::Zero;
@@ -105,7 +101,6 @@ void Assignment1Module::render()
 
     commandList->Reset(d3d12->getCommandAllocator(), pso.Get());
 
-    // Backbuffer: PRESENT -> RENDER_TARGET
     CD3DX12_RESOURCE_BARRIER barrier =
         CD3DX12_RESOURCE_BARRIER::Transition(
             d3d12->getBackBuffer(),
@@ -116,7 +111,6 @@ void Assignment1Module::render()
     const unsigned width = d3d12->getWindowWidth();
     const unsigned height = d3d12->getWindowHeight();
 
-    // -------- Camera matrices --------
     Matrix model = Matrix::Identity;
 
     Matrix view = Matrix::Identity;
@@ -131,14 +125,14 @@ void Assignment1Module::render()
     else
     {
         view = Matrix::CreateLookAt(Vector3(0.0f, 2.0f, 6.0f), Vector3::Zero, Vector3::Up);
-        proj = Matrix::CreatePerspectiveFieldOfView(XM_PIDIV4,
+        proj = Matrix::CreatePerspectiveFieldOfView(
+            XM_PIDIV4,
             (height > 0) ? (float(width) / float(height)) : 1.0f,
             0.1f, 1000.0f);
     }
 
     Matrix mvp = (model * view * proj).Transpose();
 
-    // -------- Viewport / Scissor --------
     D3D12_VIEWPORT viewport = {};
     viewport.TopLeftX = 0.0f;
     viewport.TopLeftY = 0.0f;
@@ -153,7 +147,6 @@ void Assignment1Module::render()
     scissor.right = LONG(width);
     scissor.bottom = LONG(height);
 
-    // -------- Clear --------
     float clearColor[] = { 0.05f, 0.05f, 0.06f, 1.0f };
 
     D3D12_CPU_DESCRIPTOR_HANDLE rtv = d3d12->getRenderTargetDescriptor();
@@ -166,6 +159,17 @@ void Assignment1Module::render()
         D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
         1.0f, 0, 0, nullptr);
 
+    // -------- Read UI state (Assignment window lives in UIModule) --------
+    bool showGrid = true;
+    bool showAxis = true;
+
+    if (UIModule* ui = app->getUIModule())
+    {
+        showGrid = ui->getShowGrid();
+        showAxis = ui->getShowAxis();
+        currentSampler = ui->getSelectedSampler();
+    }
+
     // -------- Draw textured quad --------
     commandList->SetGraphicsRootSignature(rootSignature.Get());
     commandList->RSSetViewports(1, &viewport);
@@ -174,7 +178,6 @@ void Assignment1Module::render()
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     commandList->IASetVertexBuffers(0, 1, &vbView);
 
-    // Bind descriptor heaps (SRV + Sampler)  -> IMPORTANTE
     ID3D12DescriptorHeap* heaps[] =
     {
         app->getShaderDescriptors()->getHeap(),
@@ -182,57 +185,28 @@ void Assignment1Module::render()
     };
     commandList->SetDescriptorHeaps(_countof(heaps), heaps);
 
-    // Root bindings
     commandList->SetGraphicsRoot32BitConstants(0, sizeof(Matrix) / 4, &mvp, 0);
     commandList->SetGraphicsRootDescriptorTable(1, app->getShaderDescriptors()->getGPUHandle(textureSRV));
     commandList->SetGraphicsRootDescriptorTable(2, app->getSamplers()->getGPUHandle(currentSampler));
 
     commandList->DrawInstanced(6, 1, 0, 0);
 
-    // -------- DebugDraw (grid + axes) --------
-    dd::xzSquareGrid(-50.0f, 50.0f, 0.0f, 1.0f, dd::colors::LightGray);
-    dd::axisTriad(ddConvert(Matrix::Identity), 0.1f, 1.0f);
+    // -------- DebugDraw (grid + axis) controlled by UI --------
+    if (showGrid)
+        dd::xzSquareGrid(-50.0f, 50.0f, 0.0f, 1.0f, dd::colors::LightGray);
+
+    if (showAxis)
+        dd::axisTriad(ddConvert(Matrix::Identity), 0.1f, 1.0f);
 
     if (debugDrawPass)
         debugDrawPass->record(commandList, width, height, view, proj);
 
-    // -------- ImGui (IGUAL que Exercise3) --------
-    if (ImGuiPass* ui = d3d12->getImGuiPass())
+    // -------- ImGui: only render draw data here --------
+    if (ImGuiPass* uiPass = d3d12->getImGuiPass())
     {
-        TimeManager* tm = app->getTimeManager();
-
-        ImGui::Begin("Exercise 4");
-        ImGui::Text("Textured quad + sampler");
-
-        static const char* names[] =
-        {
-            "Linear Wrap",  "Point Wrap",
-            "Linear Clamp", "Point Clamp",
-            "Linear Mirror","Point Mirror",
-            "Linear Border","Point Border"
-        };
-
-        int idx = (int)currentSampler;
-        if (ImGui::Combo("Sampler", &idx, names, IM_ARRAYSIZE(names)))
-            currentSampler = (ModuleSamplers::Type)idx;
-
-        ImGui::Separator();
-        if (tm)
-        {
-            ImGui::Text("FPS (avg): %.1f", tm->getFPS());
-            ImGui::Text("Avg ms:   %.2f", tm->getAvgFrameMs());
-        }
-        else
-        {
-            ImGui::Text("ImGui FPS: %.1f", ImGui::GetIO().Framerate);
-        }
-
-        ImGui::End();
-
-        ui->record(commandList); // <- ESTO evita el assert de imgui.cpp
+        uiPass->record(commandList);
     }
 
-    // Backbuffer: RENDER_TARGET -> PRESENT
     barrier = CD3DX12_RESOURCE_BARRIER::Transition(
         d3d12->getBackBuffer(),
         D3D12_RESOURCE_STATE_RENDER_TARGET,
@@ -283,15 +257,12 @@ bool Assignment1Module::createRootSignature()
 {
     CD3DX12_ROOT_PARAMETER params[3] = {};
 
-    // b0: MVP constants
     params[0].InitAsConstants(sizeof(Matrix) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
 
-    // t0: texture SRV table
     CD3DX12_DESCRIPTOR_RANGE srvRange = {};
     srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
     params[1].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
-    // s0: sampler table
     CD3DX12_DESCRIPTOR_RANGE sampRange = {};
     sampRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 1, 0);
     params[2].InitAsDescriptorTable(1, &sampRange, D3D12_SHADER_VISIBILITY_PIXEL);
@@ -329,13 +300,8 @@ bool Assignment1Module::createPipelineState()
           D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
     };
 
-    // Si quieres que sea 1:1 con Exercise4, puedes reutilizar los mismos .cso:
-    auto vs = DX::ReadData(L"Exercise4VS.cso");
-    auto ps = DX::ReadData(L"Exercise4PS.cso");
-
-    // (Opcional, luego) si decides duplicarlos para release:
-    // auto vs = DX::ReadData(L"Assignment1VS.cso");
-    // auto ps = DX::ReadData(L"Assignment1PS.cso");
+    auto vs = DX::ReadData(L"Assignment1VS.cso");
+    auto ps = DX::ReadData(L"Assignment1PS.cso");
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc{};
     psoDesc.InputLayout = { layout, _countof(layout) };
