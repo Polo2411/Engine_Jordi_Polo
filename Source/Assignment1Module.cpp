@@ -11,6 +11,7 @@
 #include "DebugDrawPass.h"
 #include "ImGuiPass.h"
 #include "ReadData.h"
+#include <filesystem>
 
 #include "UIModule.h"
 
@@ -56,7 +57,25 @@ bool Assignment1Module::init()
         ModuleResources* resources = app->getResources();
         ModuleShaderDescriptors* descriptors = app->getShaderDescriptors();
 
-        texture = resources->createTextureFromFile(L"../Game/Assets/Textures/WizardCat.jpg");
+        namespace fs = std::filesystem;
+
+        const wchar_t* pathDebug = L"../Game/Assets/Textures/WizardCat.jpg";
+        const wchar_t* pathRelease = L"Game/Assets/Textures/WizardCat.jpg";
+
+        if (fs::exists(pathRelease))
+        {
+            texture = resources->createTextureFromFile(pathRelease, L"WizardCat");
+        }
+        else if (fs::exists(pathDebug))
+        {
+            texture = resources->createTextureFromFile(pathDebug, L"WizardCat");
+        }
+        else
+        {
+            OutputDebugStringA("ERROR: WizardCat texture not found in any expected path\n");
+            return false;
+        }
+
         if (!texture)
             return false;
 

@@ -1,0 +1,11 @@
+Microsoft Windows SDK / DirectX Runtime Components
+
+This project uses Microsoft DirectX 12 runtime components and
+WinPixEventRuntime.dll provided as part of the Microsoft Windows SDK.
+
+These components are licensed under the Microsoft Software License Terms.
+
+© Microsoft Corporation. All rights reserved.
+
+For more information:
+https://learn.microsoft.com/windows/win32/direct3d12/
