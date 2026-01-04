@@ -25,7 +25,7 @@ public:
     const std::vector<BasicMaterial>& getMaterials() const { return materials; }
 
     Vector3& translation();
-    Vector3& rotationDeg();   // Euler degrees
+    Vector3& rotationDeg();
     Vector3& scale();
 
     const Matrix& getModelMatrix() const;
@@ -35,18 +35,16 @@ public:
 private:
     void loadMeshes(const tinygltf::Model& model);
     void loadMaterials(const tinygltf::Model& model, const char* basePath, BasicMaterial::Type materialType);
-
     void rebuildTransformIfNeeded() const;
 
 private:
     std::vector<BasicMaterial> materials;
     std::vector<BasicMesh> meshes;
-
     std::string srcFile;
 
-    Vector3 t = Vector3(0.0f, 0.0f, 0.0f);
-    Vector3 rDeg = Vector3(0.0f, 0.0f, 0.0f);
-    Vector3 s = Vector3(1.0f, 1.0f, 1.0f);
+    Vector3 t = Vector3::Zero;
+    Vector3 rDeg = Vector3::Zero;
+    Vector3 s = Vector3::One;
 
     mutable bool dirtyTransform = true;
     mutable Matrix modelMatrix = Matrix::Identity;

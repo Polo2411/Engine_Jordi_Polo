@@ -11,26 +11,23 @@
 
 namespace
 {
-    inline float degToRad(float deg)
-    {
-        return deg * (XM_PI / 180.0f);
-    }
+    inline float degToRad(float deg) { return deg * (XM_PI / 180.0f); }
 }
 
 void BasicModel::load(const char* fileName, const char* basePath, BasicMaterial::Type materialType)
 {
-    tinygltf::TinyGLTF gltfContext;
-    tinygltf::Model model;
-    std::string error, warning;
+    tinygltf::TinyGLTF gltf;
+    tinygltf::Model gltfModel;
 
-    const bool loadOk = gltfContext.LoadASCIIFromFile(&model, &error, &warning, fileName);
+    std::string error, warning;
+    const bool ok = gltf.LoadASCIIFromFile(&gltfModel, &error, &warning, fileName);
 
     if (!warning.empty())
         LOG("glTF warning: %s", warning.c_str());
 
-    if (!loadOk)
+    if (!ok)
     {
-        LOG("Error loading %s: %s", fileName ? fileName : "(null)", error.c_str());
+        LOG("glTF error loading %s: %s", fileName ? fileName : "(null)", error.c_str());
         return;
     }
 
@@ -39,65 +36,48 @@ void BasicModel::load(const char* fileName, const char* basePath, BasicMaterial:
     materials.clear();
     meshes.clear();
 
-    loadMaterials(model, basePath, materialType);
-    loadMeshes(model);
+    loadMaterials(gltfModel, basePath, materialType);
+    loadMeshes(gltfModel);
 
-    // Reset transform
-    t = Vector3(0.0f, 0.0f, 0.0f);
-    rDeg = Vector3(0.0f, 0.0f, 0.0f);
-    s = Vector3(1.0f, 1.0f, 1.0f);
+    // reset transform
+    t = Vector3::Zero;
+    rDeg = Vector3::Zero;
+    s = Vector3::One;
     dirtyTransform = true;
 }
 
 void BasicModel::loadMeshes(const tinygltf::Model& model)
 {
-    // One BasicMesh per glTF primitive
     size_t primitiveCount = 0;
     for (const tinygltf::Mesh& m : model.meshes)
         primitiveCount += m.primitives.size();
 
+    meshes.clear();
     meshes.reserve(primitiveCount);
 
     for (const tinygltf::Mesh& m : model.meshes)
     {
-        const char* debugName = m.name.empty() ? "gltf_mesh" : m.name.c_str();
-
         for (const tinygltf::Primitive& p : m.primitives)
         {
-            BasicMesh mesh;
-            mesh.load(model, p, debugName);
-            meshes.push_back(std::move(mesh));
+            BasicMesh bm;
+            bm.load(model, m, p);
+            meshes.push_back(std::move(bm));
         }
     }
 }
 
 void BasicModel::loadMaterials(const tinygltf::Model& model, const char* basePath, BasicMaterial::Type materialType)
 {
+    materials.clear();
     materials.resize(model.materials.size());
 
     for (size_t i = 0; i < model.materials.size(); ++i)
-    {
         materials[i].load(model, model.materials[i], materialType, basePath);
-    }
 }
 
-Vector3& BasicModel::translation()
-{
-    dirtyTransform = true;
-    return t;
-}
-
-Vector3& BasicModel::rotationDeg()
-{
-    dirtyTransform = true;
-    return rDeg;
-}
-
-Vector3& BasicModel::scale()
-{
-    dirtyTransform = true;
-    return s;
-}
+Vector3& BasicModel::translation() { dirtyTransform = true; return t; }
+Vector3& BasicModel::rotationDeg() { dirtyTransform = true; return rDeg; }
+Vector3& BasicModel::scale() { dirtyTransform = true; return s; }
 
 const Matrix& BasicModel::getModelMatrix() const
 {

@@ -1,13 +1,17 @@
 ﻿#include "Globals.h"
 #include "Application.h"
+
 #include "ModuleInput.h"
 #include "D3D12Module.h"
 #include "UIModule.h"
+
 #include "Exercise1Module.h"
 #include "Exercise2Module.h"
 #include "Exercise3Module.h"
 #include "Exercise4Module.h"
+#include "Exercise5Module.h" // Added: Exercise 5
 #include "Assignment1Module.h"
+
 #include "TimeManager.h"
 #include "ModuleResources.h"
 #include "ModuleCamera.h"
@@ -35,7 +39,8 @@ Application::Application(int argc, wchar_t** argv, void* hWnd)
     //modules.push_back(new Exercise2Module());
     //modules.push_back(new Exercise3Module());
     //modules.push_back(new Exercise4Module());
-    modules.push_back(new Assignment1Module);
+    modules.push_back(new Exercise5Module()); // Added: run Exercise 5
+    //modules.push_back(new Assignment1Module());
 }
 
 Application::~Application()
@@ -61,13 +66,11 @@ bool Application::init()
 {
     bool ret = true;
 
-    // Initialize all modules
+    // Initialize all modules in order
     for (auto it = modules.begin(); it != modules.end() && ret; ++it)
         ret = (*it)->init();
 
-    // ModuleResources depends on D3D12 being ready
-    if (ret && resources)
-        ret = resources->init();
+    // Note: ModuleResources is already part of 'modules', do not init twice.
 
     lastTime = std::chrono::steady_clock::now();
     return ret;

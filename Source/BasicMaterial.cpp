@@ -5,6 +5,8 @@
 #include "ModuleResources.h"
 #include "ModuleShaderDescriptors.h"
 
+#include <Windows.h>
+
 #pragma warning(push)
 #pragma warning(disable : 4018)
 #pragma warning(disable : 4267)
@@ -28,7 +30,7 @@ std::wstring BasicMaterial::toWStringUTF8(const std::string& s)
 
 std::wstring BasicMaterial::makeTexturePathW(const char* basePath, const std::string& uri)
 {
-    std::string base = basePath ? basePath : "";
+    const std::string base = basePath ? basePath : "";
     return toWStringUTF8(base + uri);
 }
 
@@ -38,8 +40,11 @@ bool BasicMaterial::loadTextureSRV(const tinygltf::Model& model, int textureInde
         return false;
 
     const tinygltf::Texture& tex = model.textures[textureIndex];
-    const tinygltf::Image& img = model.images[tex.source];
+    const int src = tex.source;
+    if (src < 0 || src >= (int)model.images.size())
+        return false;
 
+    const tinygltf::Image& img = model.images[src];
     if (img.uri.empty())
         return false;
 
@@ -48,7 +53,6 @@ bool BasicMaterial::loadTextureSRV(const tinygltf::Model& model, int textureInde
 
     const std::wstring pathW = makeTexturePathW(basePath, img.uri);
     textures[slot] = resources->createTextureFromFile(pathW, nullptr);
-
     if (!textures[slot])
         return false;
 
@@ -65,9 +69,11 @@ void BasicMaterial::load(const tinygltf::Model& model, const tinygltf::Material&
 {
     name = material.name;
     materialType = type;
+    materialData = {};
 
     ModuleShaderDescriptors* descriptors = app->getShaderDescriptors();
 
+    // Default all slots to the shared null SRV
     for (int i = 0; i < SLOT_COUNT; ++i)
     {
         srvIndex[i] = descriptors->getNullTexture2DSrvIndex();

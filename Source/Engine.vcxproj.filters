@@ -49,6 +49,13 @@
     <ClCompile Include="Assignment1Module.cpp">
       <Filter>AssignmentModules</Filter>
     </ClCompile>
+    <ClCompile Include="BasicModel.cpp" />
+    <ClCompile Include="TinyGltfImpl.cpp" />
+    <ClCompile Include="BasicMesh.cpp" />
+    <ClCompile Include="BasicMaterial.cpp" />
+    <ClCompile Include="Exercise5Module.cpp">
+      <Filter>ExerciseModules</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="3rdParty\imgui-1.89.8\backends\imgui_impl_win32.h" />
@@ -104,6 +111,13 @@
     <ClInclude Include="Assignment1Module.h">
       <Filter>AssignmentModules</Filter>
     </ClInclude>
+    <ClInclude Include="BasicModel.h" />
+    <ClInclude Include="BasicMesh.h" />
+    <ClInclude Include="BasicMaterial.h" />
+    <ClInclude Include="Exercise5Module.h">
+      <Filter>ExerciseModules</Filter>
+    </ClInclude>
+    <ClInclude Include="gltf_utils.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Engine.rc" />
@@ -157,6 +171,12 @@
     </FxCompile>
     <FxCompile Include="Assignment1VS.hlsl">
       <Filter>AssignmentModules\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Exercise5VS.hlsl">
+      <Filter>ExerciseModules\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Exercise5PS.hlsl">
+      <Filter>ExerciseModules\Shaders</Filter>
     </FxCompile>
   </ItemGroup>
 </Project>

@@ -2,11 +2,10 @@
 
 #include <string>
 #include <memory>
-#include <cstdint>
 #include <d3d12.h>
-#include <wrl/client.h>
+#include <wrl.h>
 
-namespace tinygltf { class Model; struct Primitive; }
+namespace tinygltf { class Model; struct Mesh; struct Primitive; }
 
 class BasicMesh
 {
@@ -21,33 +20,43 @@ public:
 
 public:
     BasicMesh() = default;
-    ~BasicMesh() = default;
+    ~BasicMesh();
 
-    void load(const tinygltf::Model& model, const tinygltf::Primitive& primitive, const char* debugName = nullptr);
+    BasicMesh(const BasicMesh&) = delete;
+    BasicMesh& operator=(const BasicMesh&) = delete;
+
+    BasicMesh(BasicMesh&&) noexcept = default;
+    BasicMesh& operator=(BasicMesh&&) noexcept = default;
+
+    void load(const tinygltf::Model& model, const tinygltf::Mesh& mesh, const tinygltf::Primitive& primitive);
 
     const std::string& getName() const { return name; }
 
     uint32_t getNumVertices() const { return numVertices; }
     uint32_t getNumIndices() const { return numIndices; }
-    bool hasIndices() const { return indexBuffer != nullptr; }
 
-    int32_t getMaterialIndex() const { return materialIndex; }
+    int getMaterialIndex() const { return materialIndex; }
 
     void draw(ID3D12GraphicsCommandList* commandList) const;
 
     static const D3D12_INPUT_LAYOUT_DESC& getInputLayoutDesc() { return inputLayoutDesc; }
 
 private:
-    BasicMesh(const BasicMesh&) = delete;
-    BasicMesh& operator=(const BasicMesh&) = delete;
+    void clean();
 
 private:
+    using VertexArray = std::unique_ptr<Vertex[]>;
+    using IndexArray = std::unique_ptr<uint8_t[]>;
+
     std::string name;
 
     uint32_t numVertices = 0;
     uint32_t numIndices = 0;
     uint32_t indexElementSize = 0;
     int32_t  materialIndex = -1;
+
+    VertexArray vertices;
+    IndexArray  indices;
 
     Microsoft::WRL::ComPtr<ID3D12Resource> vertexBuffer;
     D3D12_VERTEX_BUFFER_VIEW vertexBufferView = {};
