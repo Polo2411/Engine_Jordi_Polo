@@ -26,6 +26,10 @@ bool ModuleShaderDescriptors::init()
     gpuStart = heap->GetGPUDescriptorHandleForHeapStart();
 
     nextFreeIndex = 0;
+
+    // Reserve a null SRV for optional textures
+    nullTexture2DSrvIndex = createNullTexture2DSRV();
+
     return true;
 }
 
@@ -36,6 +40,7 @@ bool ModuleShaderDescriptors::cleanUp()
     descriptorSize = 0;
     cpuStart = {};
     gpuStart = {};
+    nullTexture2DSrvIndex = UINT32_MAX;
     return true;
 }
 
@@ -67,7 +72,6 @@ uint32_t ModuleShaderDescriptors::createSRV(ID3D12Resource* texture)
     if (index == UINT32_MAX)
         return UINT32_MAX;
 
-    // Basic SRV for a 2D texture with all mip levels
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     srvDesc.Format = texture->GetDesc().Format;
@@ -80,8 +84,32 @@ uint32_t ModuleShaderDescriptors::createSRV(ID3D12Resource* texture)
     return index;
 }
 
+uint32_t ModuleShaderDescriptors::createNullTexture2DSRV()
+{
+    uint32_t index = allocate();
+    if (index == UINT32_MAX)
+        return UINT32_MAX;
+
+    // Null SRV: valid view desc, null resource pointer
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Texture2D.MostDetailedMip = 0;
+    srvDesc.Texture2D.MipLevels = 1;
+    srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
+
+    ID3D12Device* device = app->getD3D12Module()->getDevice();
+    device->CreateShaderResourceView(nullptr, &srvDesc, getCPUHandle(index));
+
+    return index;
+}
+
 void ModuleShaderDescriptors::reset()
 {
     // Allows descriptor reuse (heap contents are not cleared)
     nextFreeIndex = 0;
+
+    // Keep null SRV reserved at the start
+    nullTexture2DSrvIndex = createNullTexture2DSRV();
 }

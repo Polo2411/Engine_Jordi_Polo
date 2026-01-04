@@ -31,6 +31,9 @@ public:
     // Creates a basic SRV for a 2D texture and returns its descriptor index
     uint32_t createSRV(ID3D12Resource* texture);
 
+    uint32_t createNullTexture2DSRV();
+    uint32_t getNullTexture2DSrvIndex() const { return nullTexture2DSrvIndex; }
+
     // Resets the allocator (does not clear heap memory)
     void reset();
 
@@ -43,4 +46,5 @@ private:
 
     static constexpr uint32_t MAX_DESCRIPTORS = 256;
     uint32_t nextFreeIndex = 0;
+    uint32_t nullTexture2DSrvIndex = UINT32_MAX;
 };
