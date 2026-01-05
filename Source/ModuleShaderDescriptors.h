@@ -14,24 +14,30 @@ public:
     ModuleShaderDescriptors() = default;
     ~ModuleShaderDescriptors() override = default;
 
-    // Module lifecycle
     bool init() override;
     bool cleanUp() override;
 
-    // Returns the underlying descriptor heap
     ID3D12DescriptorHeap* getHeap() const { return heap.Get(); }
 
-    // CPU/GPU descriptor handles for a given heap index
     D3D12_CPU_DESCRIPTOR_HANDLE getCPUHandle(uint32_t index) const;
     D3D12_GPU_DESCRIPTOR_HANDLE getGPUHandle(uint32_t index) const;
 
-    // Allocates the next free descriptor slot
+    // Single slot allocation
     uint32_t allocate();
 
-    // Creates a basic SRV for a 2D texture and returns its descriptor index
+    // Contiguous block allocation (for descriptor tables)
+    uint32_t allocateRange(uint32_t count);
+
+    // Creates an SRV at a newly allocated slot and returns its index
     uint32_t createSRV(ID3D12Resource* texture);
 
+    // Writes an SRV into an existing heap slot (index must be valid)
+    void writeSRV(uint32_t index, ID3D12Resource* texture);
+
+    // Null texture SRV helpers
     uint32_t createNullTexture2DSRV();
+    void writeNullTexture2DSRV(uint32_t index);
+
     uint32_t getNullTexture2DSrvIndex() const { return nullTexture2DSrvIndex; }
 
     // Resets the allocator (does not clear heap memory)

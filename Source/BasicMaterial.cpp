@@ -5,8 +5,6 @@
 #include "ModuleResources.h"
 #include "ModuleShaderDescriptors.h"
 
-#include <Windows.h>
-
 #pragma warning(push)
 #pragma warning(disable : 4018)
 #pragma warning(disable : 4267)
@@ -30,11 +28,29 @@ std::wstring BasicMaterial::toWStringUTF8(const std::string& s)
 
 std::wstring BasicMaterial::makeTexturePathW(const char* basePath, const std::string& uri)
 {
-    const std::string base = basePath ? basePath : "";
+    std::string base = basePath ? basePath : "";
     return toWStringUTF8(base + uri);
 }
 
-bool BasicMaterial::loadTextureSRV(const tinygltf::Model& model, int textureIndex, const char* basePath, TextureSlot slot)
+void BasicMaterial::initNullTable()
+{
+    ModuleShaderDescriptors* descriptors = app->getShaderDescriptors();
+
+    // Allocate a contiguous block for t0..t4
+    tableStartIndex = descriptors->allocateRange(SLOT_COUNT);
+    _ASSERTE(tableStartIndex != UINT32_MAX);
+
+    texturesTableGpu = descriptors->getGPUHandle(tableStartIndex);
+
+    // Fill with null SRVs by default
+    for (uint32_t i = 0; i < SLOT_COUNT; ++i)
+    {
+        descriptors->writeNullTexture2DSRV(tableStartIndex + i);
+        textures[i].Reset();
+    }
+}
+
+bool BasicMaterial::loadTextureIntoSlot(const tinygltf::Model& model, int textureIndex, const char* basePath, TextureSlot slot)
 {
     if (textureIndex < 0 || textureIndex >= (int)model.textures.size())
         return false;
@@ -56,12 +72,7 @@ bool BasicMaterial::loadTextureSRV(const tinygltf::Model& model, int textureInde
     if (!textures[slot])
         return false;
 
-    const uint32_t idx = descriptors->createSRV(textures[slot].Get());
-    if (idx == UINT32_MAX)
-        return false;
-
-    srvIndex[slot] = idx;
-    textureGpu[slot] = descriptors->getGPUHandle(idx);
+    descriptors->writeSRV(tableStartIndex + (uint32_t)slot, textures[slot].Get());
     return true;
 }
 
@@ -69,17 +80,9 @@ void BasicMaterial::load(const tinygltf::Model& model, const tinygltf::Material&
 {
     name = material.name;
     materialType = type;
+
     materialData = {};
-
-    ModuleShaderDescriptors* descriptors = app->getShaderDescriptors();
-
-    // Default all slots to the shared null SRV
-    for (int i = 0; i < SLOT_COUNT; ++i)
-    {
-        srvIndex[i] = descriptors->getNullTexture2DSrvIndex();
-        textureGpu[i] = descriptors->getGPUHandle(srvIndex[i]);
-        textures[i].Reset();
-    }
+    initNullTable();
 
     Vector4 baseColour = Vector4::One;
     const auto& pbr = material.pbrMetallicRoughness;
@@ -93,7 +96,7 @@ void BasicMaterial::load(const tinygltf::Model& model, const tinygltf::Material&
             float(pbr.baseColorFactor[3]));
     }
 
-    const bool hasColourTex = loadTextureSRV(model, pbr.baseColorTexture.index, basePath, SLOT_BASECOLOUR);
+    const bool hasColourTex = loadTextureIntoSlot(model, pbr.baseColorTexture.index, basePath, SLOT_BASECOLOUR);
 
     if (materialType == BASIC)
     {
@@ -117,10 +120,10 @@ void BasicMaterial::load(const tinygltf::Model& model, const tinygltf::Material&
     }
     else if (materialType == METALLIC_ROUGHNESS)
     {
-        const bool hasMR = loadTextureSRV(model, pbr.metallicRoughnessTexture.index, basePath, SLOT_METALLIC_ROUGHNESS);
-        const bool hasOcc = loadTextureSRV(model, material.occlusionTexture.index, basePath, SLOT_OCCLUSION);
-        const bool hasEmi = loadTextureSRV(model, material.emissiveTexture.index, basePath, SLOT_EMISSIVE);
-        const bool hasNrm = loadTextureSRV(model, material.normalTexture.index, basePath, SLOT_NORMAL);
+        const bool hasMR = loadTextureIntoSlot(model, pbr.metallicRoughnessTexture.index, basePath, SLOT_METALLIC_ROUGHNESS);
+        const bool hasOcc = loadTextureIntoSlot(model, material.occlusionTexture.index, basePath, SLOT_OCCLUSION);
+        const bool hasEmi = loadTextureIntoSlot(model, material.emissiveTexture.index, basePath, SLOT_EMISSIVE);
+        const bool hasNrm = loadTextureIntoSlot(model, material.normalTexture.index, basePath, SLOT_NORMAL);
 
         Vector3 emissiveFactor = Vector3::Zero;
         if (material.emissiveFactor.size() >= 3)

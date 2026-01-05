@@ -2,56 +2,51 @@
 
 #include <string>
 #include <array>
-#include <cstdint>
 #include <wrl/client.h>
 #include <d3d12.h>
-#include <DirectXMath.h>
 
 namespace tinygltf { class Model; struct Material; }
 
-using Microsoft::WRL::ComPtr;
-using namespace DirectX;
-
 struct BasicMaterialData
 {
-    XMFLOAT4 baseColour = XMFLOAT4(1, 1, 1, 1);
-    BOOL     hasColourTexture = FALSE;
+    XMFLOAT4 baseColour;
+    BOOL     hasColourTexture;
     UINT     padding[3] = { 0, 0, 0 };
 };
 
 struct PhongMaterialData
 {
-    XMFLOAT4 diffuseColour = XMFLOAT4(1, 1, 1, 1);
-    float    Kd = 0.85f;
-    float    Ks = 0.35f;
-    float    shininess = 32.0f;
-    BOOL     hasDiffuseTex = FALSE;
+    XMFLOAT4 diffuseColour;
+    float    Kd;
+    float    Ks;
+    float    shininess;
+    BOOL     hasDiffuseTex;
     UINT     padding[3] = { 0, 0, 0 };
 };
 
 struct PBRPhongMaterialData
 {
-    XMFLOAT3 diffuseColour = XMFLOAT3(1, 1, 1);
-    BOOL     hasDiffuseTex = FALSE;
+    XMFLOAT3 diffuseColour;
+    BOOL     hasDiffuseTex;
 
-    XMFLOAT3 specularColour = XMFLOAT3(0.015f, 0.015f, 0.015f);
-    float    shininess = 64.0f;
+    XMFLOAT3 specularColour;
+    float    shininess;
 };
 
 struct MetallicRoughnessMaterialData
 {
-    XMFLOAT4 baseColour = XMFLOAT4(1, 1, 1, 1);
-    float    metallicFactor = 1.0f;
-    float    roughnessFactor = 1.0f;
-    float    occlusionStrength = 1.0f;
-    float    normalScale = 1.0f;
-    XMFLOAT3 emissiveFactor = XMFLOAT3(0, 0, 0);
+    XMFLOAT4 baseColour;
+    float    metallicFactor;
+    float    roughnessFactor;
+    float    occlusionStrength;
+    float    normalScale;
+    XMFLOAT3 emissiveFactor;
 
-    BOOL     hasBaseColourTex = FALSE;
-    BOOL     hasMetallicRoughnessTex = FALSE;
-    BOOL     hasOcclusionTex = FALSE;
-    BOOL     hasNormalMap = FALSE;
-    BOOL     hasEmissive = FALSE;
+    BOOL     hasBaseColourTex;
+    BOOL     hasMetallicRoughnessTex;
+    BOOL     hasOcclusionTex;
+    BOOL     hasNormalMap;
+    BOOL     hasEmissive;
 };
 
 class BasicMaterial
@@ -90,14 +85,15 @@ public:
 
     const char* getName() const { return name.c_str(); }
 
-    D3D12_GPU_DESCRIPTOR_HANDLE getTextureHandle(TextureSlot slot) const { return textureGpu[slot]; }
-    D3D12_GPU_DESCRIPTOR_HANDLE getBaseColourSRV() const { return textureGpu[SLOT_BASECOLOUR]; }
+    // Descriptor table start handle (t0..t4 contiguous)
+    D3D12_GPU_DESCRIPTOR_HANDLE getTexturesTableGPU() const { return texturesTableGpu; }
 
 private:
     static std::wstring toWStringUTF8(const std::string& s);
     static std::wstring makeTexturePathW(const char* basePath, const std::string& uri);
 
-    bool loadTextureSRV(const tinygltf::Model& model, int textureIndex, const char* basePath, TextureSlot slot);
+    void initNullTable();
+    bool loadTextureIntoSlot(const tinygltf::Model& model, int textureIndex, const char* basePath, TextureSlot slot);
 
 private:
     union
@@ -110,9 +106,10 @@ private:
 
     Type materialType = BASIC;
 
-    std::array<ComPtr<ID3D12Resource>, SLOT_COUNT> textures;
-    std::array<uint32_t, SLOT_COUNT> srvIndex = {};
-    std::array<D3D12_GPU_DESCRIPTOR_HANDLE, SLOT_COUNT> textureGpu = {};
-
+    std::array<Microsoft::WRL::ComPtr<ID3D12Resource>, SLOT_COUNT> textures;
     std::string name;
+
+    // Table allocation
+    uint32_t tableStartIndex = UINT32_MAX;
+    D3D12_GPU_DESCRIPTOR_HANDLE texturesTableGpu{ 0 };
 };

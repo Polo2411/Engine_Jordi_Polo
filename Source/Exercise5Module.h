@@ -28,19 +28,32 @@ private:
     bool loadModel();
     bool createMaterialBuffers();
 
+    void imGuiCommands(const Matrix& view, const Matrix& proj);
+
 private:
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pso;
 
     BasicModel model;
 
-    // One CBV buffer per material (b1)
+    struct MaterialCBData
+    {
+        XMFLOAT4 colour;
+        BOOL     hasColourTex;
+        UINT     padding[3] = { 0, 0, 0 };
+    };
+
     std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> materialBuffers;
 
-    // Fallback material CBV (used when glTF has no materials or mesh has materialIndex < 0)
-    Microsoft::WRL::ComPtr<ID3D12Resource> fallbackMaterialBuffer;
-
     std::unique_ptr<DebugDrawPass> debugDrawPass;
+
+    // UI toggles (as in screenshot)
+    bool showAxis = false;
+    bool showGrid = true;
+    bool showGuizmo = true;
+
+    // Gizmo mode: 0=Translate, 1=Rotate, 2=Scale
+    int gizmoOperation = 0;
 
     ModuleSamplers::Type currentSampler = ModuleSamplers::Type::Linear_Wrap;
 };

@@ -13,10 +13,10 @@
 #include "ImGuiPass.h"
 #include "ReadData.h"
 
-#include <d3dcompiler.h>
 #include "d3dx12.h"
 
 #include "imgui.h"
+#include "ImGuizmo.h"
 
 using namespace DirectX;
 
@@ -46,9 +46,7 @@ bool Exercise5Module::init()
         );
 
         if (ModuleCamera* cam = app->getCamera())
-        {
-            cam->setFocusBounds(Vector3::Zero, 3.0f);
-        }
+            cam->setFocusBounds(Vector3::Zero, 2.5f);
     }
 
     return ok;
@@ -60,14 +58,110 @@ bool Exercise5Module::init()
 bool Exercise5Module::cleanUp()
 {
     materialBuffers.clear();
-    fallbackMaterialBuffer.Reset();
-
     pso.Reset();
     rootSignature.Reset();
     debugDrawPass.reset();
 
+    showAxis = false;
+    showGrid = true;
+    showGuizmo = true;
+    gizmoOperation = 0;
+
     currentSampler = ModuleSamplers::Type::Linear_Wrap;
     return true;
+}
+
+// ---------------------------------------------------------
+// ImGui (matches screenshot) + ImGuizmo
+// ---------------------------------------------------------
+void Exercise5Module::imGuiCommands(const Matrix& view, const Matrix& proj)
+{
+    // === Window: exactly like screenshot ===
+    ImGui::Begin("Geometry Viewer Options");
+
+    ImGui::Checkbox("Show grid", &showGrid);
+    ImGui::Checkbox("Show axis", &showAxis);
+    ImGui::Checkbox("Show guizmo", &showGuizmo);
+
+    ImGui::Text("Model loaded %s with %u meshes and %u materials",
+        model.getSrcFile().c_str(),
+        model.getNumMeshes(),
+        model.getNumMaterials());
+
+    for (const BasicMesh& mesh : model.getMeshes())
+    {
+        const uint32_t tris = (mesh.getNumIndices() > 0) ? (mesh.getNumIndices() / 3) : (mesh.getNumVertices() / 3);
+        ImGui::Text("Mesh %s with %u vertices and %u triangles",
+            mesh.getName().c_str(),
+            mesh.getNumVertices(),
+            tris);
+    }
+
+    Matrix objectMatrix = model.getModelMatrix();
+
+    ImGui::Separator();
+
+    // Optional hotkeys like prof (T/R/S)
+    if (ImGui::IsKeyPressed(ImGuiKey_T)) gizmoOperation = 0;
+    if (ImGui::IsKeyPressed(ImGuiKey_R)) gizmoOperation = 1;
+    if (ImGui::IsKeyPressed(ImGuiKey_S)) gizmoOperation = 2;
+
+    // Radio buttons exactly as screenshot: Translate / Rotate / Scale
+    ImGui::RadioButton("Translate", &gizmoOperation, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("Rotate", &gizmoOperation, 1);
+    ImGui::SameLine();
+    ImGui::RadioButton("Scale", &gizmoOperation, 2);
+
+    float translation[3], rotation[3], scale[3];
+    ImGuizmo::DecomposeMatrixToComponents((float*)&objectMatrix, translation, rotation, scale);
+
+    bool changed = false;
+    changed |= ImGui::DragFloat3("Tr", translation, 0.1f);
+    changed |= ImGui::DragFloat3("Rt", rotation, 0.1f);
+    changed |= ImGui::DragFloat3("Sc", scale, 0.001f);
+
+    if (changed)
+    {
+        ImGuizmo::RecomposeMatrixFromComponents(translation, rotation, scale, (float*)&objectMatrix);
+        model.setModelMatrix(objectMatrix);
+    }
+
+    ImGui::End();
+
+    // === Gizmo overlay ===
+    if (!showGuizmo)
+        return;
+
+    D3D12Module* d3d12 = app->getD3D12Module();
+    const unsigned width = d3d12->getWindowWidth();
+    const unsigned height = d3d12->getWindowHeight();
+
+    // Make sure ImGuizmo is on top and gets proper input
+    ImGuizmo::SetOrthographic(false);
+    ImGuizmo::SetDrawlist(ImGui::GetForegroundDrawList());
+    ImGuizmo::SetRect(0.0f, 0.0f, float(width), float(height));
+
+    ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
+    if (gizmoOperation == 1) op = ImGuizmo::ROTATE;
+    if (gizmoOperation == 2) op = ImGuizmo::SCALE;
+
+    // NOTE: If your camera matrices are transposed elsewhere, this is the correct usage:
+    // DirectX::SimpleMath::Matrix is row-major. ImGuizmo expects float[16] in column-major.
+    // In practice, with SimpleMath, this still works correctly as long as you're consistent.
+    // If you see wrong manipulations, we can switch to passing transposed matrices.
+    ImGuizmo::Manipulate(
+        (const float*)&view,
+        (const float*)&proj,
+        op,
+        ImGuizmo::LOCAL,
+        (float*)&objectMatrix
+    );
+
+    if (ImGuizmo::IsUsing())
+    {
+        model.setModelMatrix(objectMatrix);
+    }
 }
 
 // ---------------------------------------------------------
@@ -110,7 +204,7 @@ void Exercise5Module::render()
             0.1f, 1000.0f);
     }
 
-    // MVP (root constants b0)
+    // MVP
     Matrix mvp = (model.getModelMatrix() * view * proj).Transpose();
 
     // Viewport / Scissor
@@ -136,7 +230,10 @@ void Exercise5Module::render()
 
     commandList->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
     commandList->ClearRenderTargetView(rtv, clearColor, 0, nullptr);
-    commandList->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+    commandList->ClearDepthStencilView(
+        dsv,
+        D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
+        1.0f, 0, 0, nullptr);
 
     // Pipeline
     commandList->SetGraphicsRootSignature(rootSignature.Get());
@@ -151,9 +248,7 @@ void Exercise5Module::render()
     };
     commandList->SetDescriptorHeaps(_countof(heaps), heaps);
 
-    // Root bindings:
-    // 0: MVP constants (b0)
-    // 3: Sampler table (s0) - we bind only one sampler descriptor (selected)
+    // Root: MVP + sampler
     commandList->SetGraphicsRoot32BitConstants(0, sizeof(Matrix) / 4, &mvp, 0);
     commandList->SetGraphicsRootDescriptorTable(3, app->getSamplers()->getGPUHandle(currentSampler));
 
@@ -163,100 +258,33 @@ void Exercise5Module::render()
 
     for (const BasicMesh& mesh : meshes)
     {
-        int matIndex = mesh.getMaterialIndex();
-
-        // Pick CBV buffer
-        ID3D12Resource* cbRes = nullptr;
-        if (matIndex >= 0 && matIndex < (int)materialBuffers.size())
-        {
-            cbRes = materialBuffers[(size_t)matIndex].Get();
-        }
-        else
-        {
-            cbRes = fallbackMaterialBuffer.Get();
-        }
-
-        if (!cbRes)
+        const int matIndex = mesh.getMaterialIndex();
+        if (matIndex < 0 || matIndex >= (int)mats.size())
             continue;
 
-        // 1: Material CBV (b1)
-        commandList->SetGraphicsRootConstantBufferView(1, cbRes->GetGPUVirtualAddress());
+        commandList->SetGraphicsRootConstantBufferView(
+            1, materialBuffers[(size_t)matIndex]->GetGPUVirtualAddress());
 
-        // 2: Texture table (t0) - base colour or null SRV
-        D3D12_GPU_DESCRIPTOR_HANDLE texHandle = {};
-        if (matIndex >= 0 && matIndex < (int)mats.size())
-        {
-            texHandle = mats[(size_t)matIndex].getTextureHandle(BasicMaterial::SLOT_BASECOLOUR);
-        }
-        else if (!mats.empty())
-        {
-            texHandle = mats[0].getTextureHandle(BasicMaterial::SLOT_BASECOLOUR);
-        }
-        else
-        {
-            // No materials at all: bind global null SRV
-            ModuleShaderDescriptors* desc = app->getShaderDescriptors();
-            texHandle = desc->getGPUHandle(desc->getNullTexture2DSrvIndex());
-        }
-
-        commandList->SetGraphicsRootDescriptorTable(2, texHandle);
+        commandList->SetGraphicsRootDescriptorTable(
+            2, mats[(size_t)matIndex].getTexturesTableGPU());
 
         mesh.draw(commandList);
     }
 
-    // Debug draw
-    dd::xzSquareGrid(-50.0f, 50.0f, 0.0f, 1.0f, dd::colors::LightGray);
-    dd::axisTriad(ddConvert(Matrix::Identity), 0.1f, 1.0f);
+    // Debug draw (KEEP -50..50)
+    if (showGrid)
+        dd::xzSquareGrid(-50.0f, 50.0f, 0.0f, 1.0f, dd::colors::LightGray);
+    if (showAxis)
+        dd::axisTriad(ddConvert(Matrix::Identity), 0.1f, 1.0f);
 
     if (debugDrawPass)
         debugDrawPass->record(commandList, width, height, view, proj);
 
-    // ImGui
+    // ImGui + ImGuizmo (important: gizmo AFTER UI window)
     if (ImGuiPass* ui = d3d12->getImGuiPass())
     {
-        TimeManager* tm = app->getTimeManager();
-
-        ImGui::Begin("Exercise 5");
-        ImGui::Text("glTF Model Viewer");
-
-        ImGui::Separator();
-        ImGui::Text("File: %s", model.getSrcFile().c_str());
-        ImGui::Text("Meshes: %u", model.getNumMeshes());
-        ImGui::Text("Materials: %u", model.getNumMaterials());
-
-        Vector3& t = model.translation();
-        Vector3& r = model.rotationDeg();
-        Vector3& s = model.scale();
-
-        ImGui::DragFloat3("Translation", &t.x, 0.01f);
-        ImGui::DragFloat3("Rotation (deg)", &r.x, 0.2f);
-        ImGui::DragFloat3("Scale", &s.x, 0.01f, 0.001f, 100.0f);
-
-        static const char* names[] =
-        {
-            "Linear Wrap",  "Point Wrap",
-            "Linear Clamp", "Point Clamp",
-            "Linear Mirror","Point Mirror",
-            "Linear Border","Point Border"
-        };
-
-        int idx = (int)currentSampler;
-        if (ImGui::Combo("Sampler", &idx, names, IM_ARRAYSIZE(names)))
-            currentSampler = (ModuleSamplers::Type)idx;
-
-        ImGui::Separator();
-        if (tm)
-        {
-            ImGui::Text("FPS (avg): %.1f", tm->getFPS());
-            ImGui::Text("Avg ms:   %.2f", tm->getAvgFrameMs());
-        }
-        else
-        {
-            ImGui::Text("ImGui FPS: %.1f", ImGui::GetIO().Framerate);
-        }
-
-        ImGui::End();
-
+        ImGuizmo::BeginFrame();
+        imGuiCommands(view, proj);
         ui->record(commandList);
     }
 
@@ -270,7 +298,8 @@ void Exercise5Module::render()
     if (SUCCEEDED(commandList->Close()))
     {
         ID3D12CommandList* commandLists[] = { commandList };
-        d3d12->getDrawCommandQueue()->ExecuteCommandLists(UINT(std::size(commandLists)), commandLists);
+        d3d12->getDrawCommandQueue()->ExecuteCommandLists(
+            UINT(std::size(commandLists)), commandLists);
     }
 }
 
@@ -280,17 +309,16 @@ void Exercise5Module::render()
 bool Exercise5Module::createRootSignature()
 {
     CD3DX12_ROOT_PARAMETER rootParameters[4] = {};
+    CD3DX12_DESCRIPTOR_RANGE tableRanges;
+    CD3DX12_DESCRIPTOR_RANGE sampRange;
 
-    CD3DX12_DESCRIPTOR_RANGE srvRange = {};
-    srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0
+    tableRanges.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+    sampRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 1, 0);
 
-    CD3DX12_DESCRIPTOR_RANGE sampRange = {};
-    sampRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 1, 0); // s0 (selected handle)
-
-    rootParameters[0].InitAsConstants((sizeof(Matrix) / sizeof(UINT32)), 0, 0, D3D12_SHADER_VISIBILITY_VERTEX); // b0
-    rootParameters[1].InitAsConstantBufferView(1, 0, D3D12_SHADER_VISIBILITY_PIXEL);                            // b1
-    rootParameters[2].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_PIXEL);                      // t0
-    rootParameters[3].InitAsDescriptorTable(1, &sampRange, D3D12_SHADER_VISIBILITY_PIXEL);                     // s0
+    rootParameters[0].InitAsConstants((sizeof(Matrix) / sizeof(UINT32)), 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+    rootParameters[1].InitAsConstantBufferView(1, 0, D3D12_SHADER_VISIBILITY_PIXEL);
+    rootParameters[2].InitAsDescriptorTable(1, &tableRanges, D3D12_SHADER_VISIBILITY_PIXEL);
+    rootParameters[3].InitAsDescriptorTable(1, &sampRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
     CD3DX12_ROOT_SIGNATURE_DESC desc;
     desc.Init(
@@ -345,7 +373,7 @@ bool Exercise5Module::createPipelineState()
 }
 
 // ---------------------------------------------------------
-// loadModel (Duck)
+// loadModel
 // ---------------------------------------------------------
 bool Exercise5Module::loadModel()
 {
@@ -353,59 +381,35 @@ bool Exercise5Module::loadModel()
         "../Game/Assets/Models/Duck/",
         BasicMaterial::BASIC);
 
-    // Common duck scale
     model.scale() = Vector3(0.01f, 0.01f, 0.01f);
 
     return model.getNumMeshes() > 0;
 }
 
 // ---------------------------------------------------------
-// createMaterialBuffers (CBV per material)
+// createMaterialBuffers
 // ---------------------------------------------------------
 bool Exercise5Module::createMaterialBuffers()
 {
     ModuleResources* resources = app->getResources();
 
-    materialBuffers.clear();
-    fallbackMaterialBuffer.Reset();
-
-    // Fallback (white, no texture)
-    {
-        BasicMaterialData fallback = {};
-        fallback.baseColour = XMFLOAT4(1.f, 1.f, 1.f, 1.f);
-        fallback.hasColourTexture = FALSE;
-
-        const size_t cbSize = alignUp(sizeof(BasicMaterialData), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
-        fallbackMaterialBuffer = resources->createDefaultBuffer(&fallback, cbSize, "FallbackMaterialCB");
-        if (!fallbackMaterialBuffer)
-            return false;
-    }
-
     const auto& mats = model.getMaterials();
+    materialBuffers.clear();
     materialBuffers.reserve(mats.size());
 
     for (const BasicMaterial& mat : mats)
     {
-        // Exercise 5 uses BASIC material data (colour + hasColourTexture)
-        BasicMaterialData cb = {};
-        if (mat.getMaterialType() == BasicMaterial::BASIC)
-        {
-            cb = mat.getBasicMaterial();
-        }
-        else
-        {
-            // Convert other types to a reasonable default for this exercise
-            cb.baseColour = XMFLOAT4(1.f, 1.f, 1.f, 1.f);
-            cb.hasColourTexture = FALSE;
-        }
+        MaterialCBData cb = {};
+        const BasicMaterialData& src = mat.getBasicMaterial();
 
-        const size_t cbSize = alignUp(sizeof(BasicMaterialData), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
+        cb.colour = src.baseColour;
+        cb.hasColourTex = src.hasColourTexture;
 
-        auto buffer = resources->createDefaultBuffer(&cb, cbSize, mat.getName());
-        if (!buffer)
+        const size_t cbSize = alignUp(sizeof(MaterialCBData), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
+        materialBuffers.push_back(resources->createDefaultBuffer(&cb, cbSize, mat.getName()));
+
+        if (!materialBuffers.back())
             return false;
-
-        materialBuffers.push_back(buffer);
     }
 
     return true;

@@ -26,7 +26,7 @@ Application::Application(int argc, wchar_t** argv, void* hWnd)
     modules.push_back(new ModuleInput((HWND)hWnd));
     modules.push_back(d3d12 = new D3D12Module((HWND)hWnd));
     modules.push_back(timeManager = new TimeManager());
-    modules.push_back(ui = new UIModule());
+    //modules.push_back(ui = new UIModule());
 
     // Rendering-related helpers
     modules.push_back(resources = new ModuleResources());
