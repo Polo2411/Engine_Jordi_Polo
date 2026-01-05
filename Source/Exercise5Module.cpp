@@ -7,7 +7,6 @@
 #include "ModuleResources.h"
 #include "ModuleShaderDescriptors.h"
 #include "ModuleSamplers.h"
-#include "TimeManager.h"
 
 #include "DebugDrawPass.h"
 #include "ImGuiPass.h"
@@ -18,7 +17,60 @@
 #include "imgui.h"
 #include "ImGuizmo.h"
 
+#include <filesystem>
+#include <string>
+
 using namespace DirectX;
+
+namespace fs = std::filesystem;
+
+namespace
+{
+    fs::path GetExeDir()
+    {
+        wchar_t buf[MAX_PATH]{};
+        DWORD len = GetModuleFileNameW(nullptr, buf, MAX_PATH);
+        if (len == 0 || len >= MAX_PATH)
+            return fs::current_path();
+
+        fs::path p(buf);
+        return p.has_parent_path() ? p.parent_path() : fs::current_path();
+    }
+
+    bool FindUpwards(const fs::path& startDir, const fs::path& relativeFile, fs::path& outAbsFile, int maxLevels = 12)
+    {
+        fs::path dir = startDir;
+
+        for (int i = 0; i <= maxLevels; ++i)
+        {
+            fs::path candidate = dir / relativeFile;
+            if (fs::exists(candidate))
+            {
+                outAbsFile = fs::absolute(candidate);
+                return true;
+            }
+
+            if (!dir.has_parent_path())
+                break;
+
+            dir = dir.parent_path();
+        }
+
+        return false;
+    }
+
+    std::string ToGenericString(const fs::path& p)
+    {
+        return p.generic_string();
+    }
+
+    std::string EnsureTrailingSlash(std::string s)
+    {
+        if (!s.empty() && s.back() != '/')
+            s.push_back('/');
+        return s;
+    }
+}
 
 // ---------------------------------------------------------
 // init
@@ -72,11 +124,10 @@ bool Exercise5Module::cleanUp()
 }
 
 // ---------------------------------------------------------
-// ImGui (matches screenshot) + ImGuizmo
+// ImGui + ImGuizmo
 // ---------------------------------------------------------
 void Exercise5Module::imGuiCommands(const Matrix& view, const Matrix& proj)
 {
-    // === Window: exactly like screenshot ===
     ImGui::Begin("Geometry Viewer Options");
 
     ImGui::Checkbox("Show grid", &showGrid);
@@ -101,12 +152,10 @@ void Exercise5Module::imGuiCommands(const Matrix& view, const Matrix& proj)
 
     ImGui::Separator();
 
-    // Optional hotkeys like prof (T/R/S)
     if (ImGui::IsKeyPressed(ImGuiKey_T)) gizmoOperation = 0;
     if (ImGui::IsKeyPressed(ImGuiKey_R)) gizmoOperation = 1;
     if (ImGui::IsKeyPressed(ImGuiKey_S)) gizmoOperation = 2;
 
-    // Radio buttons exactly as screenshot: Translate / Rotate / Scale
     ImGui::RadioButton("Translate", &gizmoOperation, 0);
     ImGui::SameLine();
     ImGui::RadioButton("Rotate", &gizmoOperation, 1);
@@ -129,7 +178,6 @@ void Exercise5Module::imGuiCommands(const Matrix& view, const Matrix& proj)
 
     ImGui::End();
 
-    // === Gizmo overlay ===
     if (!showGuizmo)
         return;
 
@@ -137,7 +185,6 @@ void Exercise5Module::imGuiCommands(const Matrix& view, const Matrix& proj)
     const unsigned width = d3d12->getWindowWidth();
     const unsigned height = d3d12->getWindowHeight();
 
-    // Make sure ImGuizmo is on top and gets proper input
     ImGuizmo::SetOrthographic(false);
     ImGuizmo::SetDrawlist(ImGui::GetForegroundDrawList());
     ImGuizmo::SetRect(0.0f, 0.0f, float(width), float(height));
@@ -146,10 +193,6 @@ void Exercise5Module::imGuiCommands(const Matrix& view, const Matrix& proj)
     if (gizmoOperation == 1) op = ImGuizmo::ROTATE;
     if (gizmoOperation == 2) op = ImGuizmo::SCALE;
 
-    // NOTE: If your camera matrices are transposed elsewhere, this is the correct usage:
-    // DirectX::SimpleMath::Matrix is row-major. ImGuizmo expects float[16] in column-major.
-    // In practice, with SimpleMath, this still works correctly as long as you're consistent.
-    // If you see wrong manipulations, we can switch to passing transposed matrices.
     ImGuizmo::Manipulate(
         (const float*)&view,
         (const float*)&proj,
@@ -159,9 +202,7 @@ void Exercise5Module::imGuiCommands(const Matrix& view, const Matrix& proj)
     );
 
     if (ImGuizmo::IsUsing())
-    {
         model.setModelMatrix(objectMatrix);
-    }
 }
 
 // ---------------------------------------------------------
@@ -174,13 +215,20 @@ void Exercise5Module::render()
 
     commandList->Reset(d3d12->getCommandAllocator(), pso.Get());
 
+    // IMPORTANT: End this BEFORE Close().
+    BEGIN_EVENT(commandList, "Exercise5 Frame");
+
     // Backbuffer: PRESENT -> RENDER_TARGET
-    CD3DX12_RESOURCE_BARRIER barrier =
-        CD3DX12_RESOURCE_BARRIER::Transition(
-            d3d12->getBackBuffer(),
-            D3D12_RESOURCE_STATE_PRESENT,
-            D3D12_RESOURCE_STATE_RENDER_TARGET);
-    commandList->ResourceBarrier(1, &barrier);
+    BEGIN_EVENT(commandList, "BackBuffer Transition: PRESENT -> RT");
+    {
+        CD3DX12_RESOURCE_BARRIER barrier =
+            CD3DX12_RESOURCE_BARRIER::Transition(
+                d3d12->getBackBuffer(),
+                D3D12_RESOURCE_STATE_PRESENT,
+                D3D12_RESOURCE_STATE_RENDER_TARGET);
+        commandList->ResourceBarrier(1, &barrier);
+    }
+    END_EVENT(commandList);
 
     const unsigned width = d3d12->getWindowWidth();
     const unsigned height = d3d12->getWindowHeight();
@@ -223,77 +271,115 @@ void Exercise5Module::render()
     scissor.bottom = LONG(height);
 
     // Clear
-    float clearColor[] = { 0.05f, 0.05f, 0.06f, 1.0f };
-
-    D3D12_CPU_DESCRIPTOR_HANDLE rtv = d3d12->getRenderTargetDescriptor();
-    D3D12_CPU_DESCRIPTOR_HANDLE dsv = d3d12->getDepthStencilDescriptor();
-
-    commandList->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
-    commandList->ClearRenderTargetView(rtv, clearColor, 0, nullptr);
-    commandList->ClearDepthStencilView(
-        dsv,
-        D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
-        1.0f, 0, 0, nullptr);
-
-    // Pipeline
-    commandList->SetGraphicsRootSignature(rootSignature.Get());
-    commandList->RSSetViewports(1, &viewport);
-    commandList->RSSetScissorRects(1, &scissor);
-
-    // Descriptor heaps (SRV + samplers)
-    ID3D12DescriptorHeap* heaps[] =
+    BEGIN_EVENT(commandList, "Clear");
     {
-        app->getShaderDescriptors()->getHeap(),
-        app->getSamplers()->getHeap()
-    };
-    commandList->SetDescriptorHeaps(_countof(heaps), heaps);
+        float clearColor[] = { 0.05f, 0.05f, 0.06f, 1.0f };
 
-    // Root: MVP + sampler
-    commandList->SetGraphicsRoot32BitConstants(0, sizeof(Matrix) / 4, &mvp, 0);
-    commandList->SetGraphicsRootDescriptorTable(3, app->getSamplers()->getGPUHandle(currentSampler));
+        D3D12_CPU_DESCRIPTOR_HANDLE rtv = d3d12->getRenderTargetDescriptor();
+        D3D12_CPU_DESCRIPTOR_HANDLE dsv = d3d12->getDepthStencilDescriptor();
+
+        commandList->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
+        commandList->ClearRenderTargetView(rtv, clearColor, 0, nullptr);
+        commandList->ClearDepthStencilView(
+            dsv,
+            D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
+            1.0f, 0, 0, nullptr);
+    }
+    END_EVENT(commandList);
+
+    // Pipeline setup
+    BEGIN_EVENT(commandList, "Pipeline Setup");
+    {
+        commandList->SetGraphicsRootSignature(rootSignature.Get());
+        commandList->RSSetViewports(1, &viewport);
+        commandList->RSSetScissorRects(1, &scissor);
+
+        ID3D12DescriptorHeap* heaps[] =
+        {
+            app->getShaderDescriptors()->getHeap(),
+            app->getSamplers()->getHeap()
+        };
+        commandList->SetDescriptorHeaps(_countof(heaps), heaps);
+
+        commandList->SetGraphicsRoot32BitConstants(0, sizeof(Matrix) / 4, &mvp, 0);
+        commandList->SetGraphicsRootDescriptorTable(3, app->getSamplers()->getGPUHandle(currentSampler));
+    }
+    END_EVENT(commandList);
 
     // Draw model
-    const auto& meshes = model.getMeshes();
-    const auto& mats = model.getMaterials();
-
-    for (const BasicMesh& mesh : meshes)
+    BEGIN_EVENT(commandList, "Model Render Pass");
     {
-        const int matIndex = mesh.getMaterialIndex();
-        if (matIndex < 0 || matIndex >= (int)mats.size())
-            continue;
+        const auto& meshes = model.getMeshes();
+        const auto& mats = model.getMaterials();
 
-        commandList->SetGraphicsRootConstantBufferView(
-            1, materialBuffers[(size_t)matIndex]->GetGPUVirtualAddress());
+        if (meshes.empty())
+            SET_MARKER(commandList, "Warning: no meshes");
 
-        commandList->SetGraphicsRootDescriptorTable(
-            2, mats[(size_t)matIndex].getTexturesTableGPU());
+        for (const BasicMesh& mesh : meshes)
+        {
+            char meshEvent[256]{};
+            sprintf_s(meshEvent, "Draw Mesh: %s", mesh.getName().c_str());
+            BEGIN_EVENT(commandList, meshEvent);
 
-        mesh.draw(commandList);
+            const int matIndex = mesh.getMaterialIndex();
+            if (matIndex < 0 || matIndex >= (int)mats.size())
+            {
+                SET_MARKER(commandList, "Warning: invalid material index");
+                END_EVENT(commandList);
+                continue;
+            }
+
+            commandList->SetGraphicsRootConstantBufferView(
+                1, materialBuffers[(size_t)matIndex]->GetGPUVirtualAddress());
+
+            commandList->SetGraphicsRootDescriptorTable(
+                2, mats[(size_t)matIndex].getTexturesTableGPU());
+
+            mesh.draw(commandList);
+
+            END_EVENT(commandList);
+        }
     }
+    END_EVENT(commandList);
 
-    // Debug draw (KEEP -50..50)
-    if (showGrid)
-        dd::xzSquareGrid(-50.0f, 50.0f, 0.0f, 1.0f, dd::colors::LightGray);
-    if (showAxis)
-        dd::axisTriad(ddConvert(Matrix::Identity), 0.1f, 1.0f);
-
-    if (debugDrawPass)
-        debugDrawPass->record(commandList, width, height, view, proj);
-
-    // ImGui + ImGuizmo (important: gizmo AFTER UI window)
-    if (ImGuiPass* ui = d3d12->getImGuiPass())
+    // Debug draw
+    BEGIN_EVENT(commandList, "Debug Draw");
     {
-        ImGuizmo::BeginFrame();
-        imGuiCommands(view, proj);
-        ui->record(commandList);
+        if (showGrid)
+            dd::xzSquareGrid(-50.0f, 50.0f, 0.0f, 1.0f, dd::colors::LightGray);
+        if (showAxis)
+            dd::axisTriad(ddConvert(Matrix::Identity), 0.1f, 1.0f);
+
+        if (debugDrawPass)
+            debugDrawPass->record(commandList, width, height, view, proj);
     }
+    END_EVENT(commandList);
+
+    // ImGui
+    BEGIN_EVENT(commandList, "ImGui");
+    {
+        if (ImGuiPass* ui = d3d12->getImGuiPass())
+        {
+            ImGuizmo::BeginFrame();
+            imGuiCommands(view, proj);
+            ui->record(commandList);
+        }
+    }
+    END_EVENT(commandList);
 
     // Backbuffer: RENDER_TARGET -> PRESENT
-    barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-        d3d12->getBackBuffer(),
-        D3D12_RESOURCE_STATE_RENDER_TARGET,
-        D3D12_RESOURCE_STATE_PRESENT);
-    commandList->ResourceBarrier(1, &barrier);
+    BEGIN_EVENT(commandList, "BackBuffer Transition: RT -> PRESENT");
+    {
+        CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+            d3d12->getBackBuffer(),
+            D3D12_RESOURCE_STATE_RENDER_TARGET,
+            D3D12_RESOURCE_STATE_PRESENT);
+        commandList->ResourceBarrier(1, &barrier);
+    }
+    END_EVENT(commandList);
+
+    // IMPORTANT: End frame BEFORE Close().
+    END_EVENT(commandList);
 
     if (SUCCEEDED(commandList->Close()))
     {
@@ -304,7 +390,7 @@ void Exercise5Module::render()
 }
 
 // ---------------------------------------------------------
-// createRootSignature (PPT layout)
+// createRootSignature
 // ---------------------------------------------------------
 bool Exercise5Module::createRootSignature()
 {
@@ -331,11 +417,15 @@ bool Exercise5Module::createRootSignature()
     if (FAILED(D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, nullptr)))
         return false;
 
-    return SUCCEEDED(
-        app->getD3D12Module()->getDevice()->CreateRootSignature(
-            0, blob->GetBufferPointer(), blob->GetBufferSize(),
-            IID_PPV_ARGS(&rootSignature))
-    );
+    HRESULT hr = app->getD3D12Module()->getDevice()->CreateRootSignature(
+        0, blob->GetBufferPointer(), blob->GetBufferSize(),
+        IID_PPV_ARGS(&rootSignature));
+
+    if (FAILED(hr))
+        return false;
+
+    rootSignature->SetName(L"Exercise5 RootSignature");
+    return true;
 }
 
 // ---------------------------------------------------------
@@ -366,20 +456,46 @@ bool Exercise5Module::createPipelineState()
     psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
 
-    return SUCCEEDED(
-        app->getD3D12Module()->getDevice()->CreateGraphicsPipelineState(
-            &psoDesc, IID_PPV_ARGS(&pso))
-    );
+    HRESULT hr = app->getD3D12Module()->getDevice()->CreateGraphicsPipelineState(
+        &psoDesc, IID_PPV_ARGS(&pso));
+
+    if (FAILED(hr))
+        return false;
+
+    pso->SetName(L"Exercise5 PSO");
+    return true;
 }
 
 // ---------------------------------------------------------
-// loadModel
+// loadModel (robust path for PIX / exe / VS / Release)
 // ---------------------------------------------------------
 bool Exercise5Module::loadModel()
 {
-    model.load("../Game/Assets/Models/Duck/Duck.gltf",
-        "../Game/Assets/Models/Duck/",
-        BasicMaterial::BASIC);
+    const fs::path relGltf = fs::path("Game") / "Assets" / "Models" / "Duck" / "Duck.gltf";
+
+    fs::path absGltf;
+    const fs::path cwd = fs::current_path();
+    const fs::path exeDir = GetExeDir();
+
+    bool found = FindUpwards(cwd, relGltf, absGltf, 12);
+    if (!found)
+        found = FindUpwards(exeDir, relGltf, absGltf, 12);
+
+    if (!found)
+    {
+        LOG("Exercise5Module: Could not find %s (CWD=%s, EXE=%s)",
+            relGltf.generic_string().c_str(),
+            cwd.generic_string().c_str(),
+            exeDir.generic_string().c_str());
+        return false;
+    }
+
+    const fs::path absDuckDir = absGltf.parent_path();
+
+    const std::string gltfPath = ToGenericString(absGltf);
+    const std::string basePath = EnsureTrailingSlash(ToGenericString(absDuckDir));
+
+    model.load(gltfPath.c_str(), basePath.c_str(), BasicMaterial::BASIC);
 
     model.scale() = Vector3(0.01f, 0.01f, 0.01f);
 

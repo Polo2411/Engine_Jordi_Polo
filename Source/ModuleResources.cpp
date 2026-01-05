@@ -32,6 +32,45 @@ ModuleResources::~ModuleResources()
     cleanUp();
 }
 
+// --------------------------------------------------------------
+// Debug name helpers
+// --------------------------------------------------------------
+std::wstring ModuleResources::utf8ToWString(const char* s)
+{
+    if (!s || s[0] == '\0')
+        return {};
+
+    const int sizeNeeded = MultiByteToWideChar(CP_UTF8, 0, s, (int)strlen(s), nullptr, 0);
+    if (sizeNeeded <= 0)
+        return {};
+
+    std::wstring w;
+    w.resize(sizeNeeded);
+    MultiByteToWideChar(CP_UTF8, 0, s, (int)strlen(s), w.data(), sizeNeeded);
+    return w;
+}
+
+void ModuleResources::setDebugName(ID3D12Object* obj, const wchar_t* nameW)
+{
+    if (!obj || !nameW || nameW[0] == L'\0')
+        return;
+
+    obj->SetName(nameW);
+}
+
+void ModuleResources::setDebugName(ID3D12Object* obj, const char* nameUtf8)
+{
+    if (!obj || !nameUtf8 || nameUtf8[0] == '\0')
+        return;
+
+    const std::wstring w = utf8ToWString(nameUtf8);
+    if (!w.empty())
+        obj->SetName(w.c_str());
+}
+
+// --------------------------------------------------------------
+// init / cleanUp
+// --------------------------------------------------------------
 bool ModuleResources::init()
 {
     // Get device and draw queue from D3D12Module
@@ -97,7 +136,16 @@ bool ModuleResources::cleanUp()
 ComPtr<ID3D12Resource> ModuleResources::createUploadBuffer(
     const void* cpuData,
     size_t      dataSize,
-    const char* name)
+    const char* debugName)
+{
+    const std::wstring w = utf8ToWString(debugName);
+    return createUploadBuffer(cpuData, dataSize, w.empty() ? nullptr : w.c_str());
+}
+
+ComPtr<ID3D12Resource> ModuleResources::createUploadBuffer(
+    const void* cpuData,
+    size_t          dataSize,
+    const wchar_t* debugNameW)
 {
     if (!m_device)
         return nullptr;
@@ -118,11 +166,7 @@ ComPtr<ID3D12Resource> ModuleResources::createUploadBuffer(
     if (FAILED(hr))
         return nullptr;
 
-    if (name)
-    {
-        std::wstring wname(name, name + strlen(name));
-        uploadBuffer->SetName(wname.c_str());
-    }
+    setDebugName(uploadBuffer.Get(), debugNameW);
 
     BYTE* pData = nullptr;
     CD3DX12_RANGE readRange(0, 0); // CPU will not read from this resource
@@ -143,13 +187,34 @@ ComPtr<ID3D12Resource> ModuleResources::createUploadBuffer(
 ComPtr<ID3D12Resource> ModuleResources::createDefaultBuffer(
     const void* cpuData,
     size_t      dataSize,
-    const char* name)
+    const char* debugName)
+{
+    const std::wstring w = utf8ToWString(debugName);
+    return createDefaultBuffer(cpuData, dataSize, w.empty() ? nullptr : w.c_str());
+}
+
+ComPtr<ID3D12Resource> ModuleResources::createDefaultBuffer(
+    const void* cpuData,
+    size_t          dataSize,
+    const wchar_t* debugNameW)
 {
     if (!m_device || !m_queue)
         return nullptr;
 
+    // Name upload and default resources for PIX
+    std::wstring uploadName;
+    if (debugNameW && debugNameW[0] != L'\0')
+    {
+        uploadName = debugNameW;
+        uploadName += L"_UPLOAD";
+    }
+
     // 1) Create and fill staging buffer (UPLOAD)
-    ComPtr<ID3D12Resource> uploadBuffer = createUploadBuffer(cpuData, dataSize, nullptr);
+    ComPtr<ID3D12Resource> uploadBuffer = createUploadBuffer(
+        cpuData,
+        dataSize,
+        uploadName.empty() ? nullptr : uploadName.c_str());
+
     if (!uploadBuffer)
         return nullptr;
 
@@ -170,6 +235,8 @@ ComPtr<ID3D12Resource> ModuleResources::createDefaultBuffer(
     if (FAILED(hr))
         return nullptr;
 
+    setDebugName(defaultBuffer.Get(), debugNameW);
+
     // 3) Copy UPLOAD -> DEFAULT using the internal command list
     m_allocator->Reset();
     m_cmdList->Reset(m_allocator.Get(), nullptr);
@@ -182,12 +249,6 @@ ComPtr<ID3D12Resource> ModuleResources::createDefaultBuffer(
 
     // 4) Wait for the copy to finish (so the upload buffer can be released)
     FlushCopyQueue();
-
-    if (name)
-    {
-        std::wstring wname(name, name + strlen(name));
-        defaultBuffer->SetName(wname.c_str());
-    }
 
     return defaultBuffer;
 }
@@ -213,7 +274,9 @@ void ModuleResources::FlushCopyQueue()
 // --------------------------------------------------------------
 // createTextureFromFile: loads texture and generates mipmaps if missing
 // --------------------------------------------------------------
-ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(const std::wstring& filePath, const wchar_t* debugName)
+ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(
+    const std::wstring& filePath,
+    const wchar_t* debugName)
 {
     if (!m_device || !m_queue)
         return nullptr;
@@ -273,8 +336,11 @@ ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(const std::wstring
     if (FAILED(hr))
         return nullptr;
 
-    if (debugName)
-        texture->SetName(debugName);
+    // PIX-friendly: if debugName is not provided, use filePath
+    if (debugName && debugName[0] != L'\0')
+        setDebugName(texture.Get(), debugName);
+    else
+        setDebugName(texture.Get(), filePath.c_str());
 
     // Build subresource list: for each array item, for each mip level
     std::vector<D3D12_SUBRESOURCE_DATA> subresources;
@@ -318,6 +384,13 @@ ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(const std::wstring
 
     if (FAILED(hr))
         return nullptr;
+
+    // Name staging too (useful in PIX)
+    {
+        std::wstring stagingName = L"TextureUpload_";
+        stagingName += (debugName && debugName[0] != L'\0') ? debugName : filePath.c_str();
+        setDebugName(staging.Get(), stagingName.c_str());
+    }
 
     // Record upload + transitions
     m_allocator->Reset();
