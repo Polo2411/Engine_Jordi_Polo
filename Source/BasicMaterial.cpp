@@ -68,11 +68,11 @@ bool BasicMaterial::loadTextureIntoSlot(const tinygltf::Model& model, int textur
     ModuleShaderDescriptors* descriptors = app->getShaderDescriptors();
 
     const std::wstring pathW = makeTexturePathW(basePath, img.uri);
-    textures[slot] = resources->createTextureFromFile(pathW, nullptr);
-    if (!textures[slot])
+    textures[(size_t)slot] = resources->createTextureFromFile(pathW, nullptr);
+    if (!textures[(size_t)slot])
         return false;
 
-    descriptors->writeSRV(tableStartIndex + (uint32_t)slot, textures[slot].Get());
+    descriptors->writeSRV(tableStartIndex + (uint32_t)slot, textures[(size_t)slot].Get());
     return true;
 }
 
@@ -147,4 +147,41 @@ void BasicMaterial::load(const tinygltf::Model& model, const tinygltf::Material&
         materialData.metallicRoughness.hasEmissive = hasEmi ? TRUE : FALSE;
         materialData.metallicRoughness.hasNormalMap = hasNrm ? TRUE : FALSE;
     }
+}
+
+void BasicMaterial::setPhongMaterial(const PhongMaterialData& phong)
+{
+    if (materialType != PHONG)
+        return;
+
+    materialData.phong = phong;
+
+    // Keep the texture flag consistent with the real SRV slot.
+    materialData.phong.hasDiffuseTex = hasTexture(SLOT_BASECOLOUR) ? TRUE : FALSE;
+}
+
+void BasicMaterial::setPBRPhongMaterial(const PBRPhongMaterialData& pbr)
+{
+    if (materialType != PBR_PHONG)
+        return;
+
+    materialData.pbrPhong = pbr;
+
+    // Keep the texture flag consistent with the real SRV slot.
+    materialData.pbrPhong.hasDiffuseTex = hasTexture(SLOT_BASECOLOUR) ? TRUE : FALSE;
+}
+
+void BasicMaterial::setMetallicRoughnessMaterial(const MetallicRoughnessMaterialData& mr)
+{
+    if (materialType != METALLIC_ROUGHNESS)
+        return;
+
+    materialData.metallicRoughness = mr;
+
+    // Keep texture flags consistent with real SRV slots.
+    materialData.metallicRoughness.hasBaseColourTex = hasTexture(SLOT_BASECOLOUR) ? TRUE : FALSE;
+    materialData.metallicRoughness.hasMetallicRoughnessTex = hasTexture(SLOT_METALLIC_ROUGHNESS) ? TRUE : FALSE;
+    materialData.metallicRoughness.hasOcclusionTex = hasTexture(SLOT_OCCLUSION) ? TRUE : FALSE;
+    materialData.metallicRoughness.hasEmissive = hasTexture(SLOT_EMISSIVE) ? TRUE : FALSE;
+    materialData.metallicRoughness.hasNormalMap = hasTexture(SLOT_NORMAL) ? TRUE : FALSE;
 }

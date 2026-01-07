@@ -83,6 +83,11 @@ public:
     const PBRPhongMaterialData& getPBRPhongMaterial() const { _ASSERTE(materialType == PBR_PHONG); return materialData.pbrPhong; }
     const MetallicRoughnessMaterialData& getMetallicRoughnessMaterial() const { _ASSERTE(materialType == METALLIC_ROUGHNESS); return materialData.metallicRoughness; }
 
+    // Runtime editing helpers (UI). They keep texture flags consistent with loaded slots.
+    void setPhongMaterial(const PhongMaterialData& phong);
+    void setPBRPhongMaterial(const PBRPhongMaterialData& pbr);
+    void setMetallicRoughnessMaterial(const MetallicRoughnessMaterialData& mr);
+
     const char* getName() const { return name.c_str(); }
 
     // Descriptor table start handle (t0..t4 contiguous)
@@ -94,6 +99,8 @@ private:
 
     void initNullTable();
     bool loadTextureIntoSlot(const tinygltf::Model& model, int textureIndex, const char* basePath, TextureSlot slot);
+
+    bool hasTexture(TextureSlot slot) const { return textures[(size_t)slot] != nullptr; }
 
 private:
     union

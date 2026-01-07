@@ -81,6 +81,7 @@ bool Exercise5Module::init()
 
     ok &= createRootSignature();
     ok &= createPipelineState();
+    ok &= createTransformsBuffer();
     ok &= loadModel();
     ok &= createMaterialBuffers();
 
@@ -110,6 +111,15 @@ bool Exercise5Module::init()
 bool Exercise5Module::cleanUp()
 {
     materialBuffers.clear();
+
+    if (transformsBuffer && transformsMapped)
+    {
+        transformsBuffer->Unmap(0, nullptr);
+        transformsMapped = nullptr;
+    }
+    transformsBuffer.Reset();
+    transformsCBSize = 0;
+
     pso.Reset();
     rootSignature.Reset();
     debugDrawPass.reset();
@@ -252,8 +262,16 @@ void Exercise5Module::render()
             0.1f, 1000.0f);
     }
 
-    // MVP
+    // MVP (keep transpose because shader uses column_major float4x4 + mul(v, m))
     Matrix mvp = (model.getModelMatrix() * view * proj).Transpose();
+
+    // Update transforms CB (b0)
+    if (transformsMapped)
+    {
+        TransformsCBData cb = {};
+        cb.mvp = mvp;
+        memcpy(transformsMapped, &cb, sizeof(cb));
+    }
 
     // Viewport / Scissor
     D3D12_VIEWPORT viewport = {};
@@ -301,8 +319,16 @@ void Exercise5Module::render()
         };
         commandList->SetDescriptorHeaps(_countof(heaps), heaps);
 
-        commandList->SetGraphicsRoot32BitConstants(0, sizeof(Matrix) / 4, &mvp, 0);
-        commandList->SetGraphicsRootDescriptorTable(3, app->getSamplers()->getGPUHandle(currentSampler));
+        // b0 = transforms CBV (VS)
+        if (transformsBuffer)
+        {
+            commandList->SetGraphicsRootConstantBufferView(
+                0, transformsBuffer->GetGPUVirtualAddress());
+        }
+
+        // s0 sampler (PS)
+        commandList->SetGraphicsRootDescriptorTable(
+            3, app->getSamplers()->getGPUHandle(currentSampler));
     }
     END_EVENT(commandList);
 
@@ -329,9 +355,11 @@ void Exercise5Module::render()
                 continue;
             }
 
+            // b1 = material CBV (PS)
             commandList->SetGraphicsRootConstantBufferView(
                 1, materialBuffers[(size_t)matIndex]->GetGPUVirtualAddress());
 
+            // t0..t4 = material textures table (PS)
             commandList->SetGraphicsRootDescriptorTable(
                 2, mats[(size_t)matIndex].getTexturesTableGPU());
 
@@ -398,12 +426,20 @@ bool Exercise5Module::createRootSignature()
     CD3DX12_DESCRIPTOR_RANGE tableRanges;
     CD3DX12_DESCRIPTOR_RANGE sampRange;
 
-    tableRanges.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+    // t0..t4 contiguous (matches BasicMaterial table)
+    tableRanges.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, BasicMaterial::SLOT_COUNT, 0);
     sampRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 1, 0);
 
-    rootParameters[0].InitAsConstants((sizeof(Matrix) / sizeof(UINT32)), 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+    // b0 = transforms (VS)
+    rootParameters[0].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+
+    // b1 = material (PS)
     rootParameters[1].InitAsConstantBufferView(1, 0, D3D12_SHADER_VISIBILITY_PIXEL);
+
+    // t0..t4 table (PS)
     rootParameters[2].InitAsDescriptorTable(1, &tableRanges, D3D12_SHADER_VISIBILITY_PIXEL);
+
+    // s0 table (PS)
     rootParameters[3].InitAsDescriptorTable(1, &sampRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
     CD3DX12_ROOT_SIGNATURE_DESC desc;
@@ -463,6 +499,48 @@ bool Exercise5Module::createPipelineState()
         return false;
 
     pso->SetName(L"Exercise5 PSO");
+    return true;
+}
+
+// ---------------------------------------------------------
+// createTransformsBuffer (UPLOAD CBV, persistently mapped)
+// ---------------------------------------------------------
+bool Exercise5Module::createTransformsBuffer()
+{
+    ID3D12Device* device = app->getD3D12Module()->getDevice();
+    if (!device)
+        return false;
+
+    transformsCBSize = alignUp(sizeof(TransformsCBData), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
+
+    CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
+    CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(transformsCBSize);
+
+    HRESULT hr = device->CreateCommittedResource(
+        &heapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&transformsBuffer)
+    );
+
+    if (FAILED(hr) || !transformsBuffer)
+        return false;
+
+    transformsBuffer->SetName(L"Exercise5 Transforms CB (b0)");
+
+    transformsMapped = nullptr;
+    CD3DX12_RANGE readRange(0, 0); // we do not read from CPU
+    hr = transformsBuffer->Map(0, &readRange, reinterpret_cast<void**>(&transformsMapped));
+    if (FAILED(hr) || !transformsMapped)
+        return false;
+
+    // Initialize to identity
+    TransformsCBData init = {};
+    init.mvp = Matrix::Identity;
+    memcpy(transformsMapped, &init, sizeof(init));
+
     return true;
 }
 

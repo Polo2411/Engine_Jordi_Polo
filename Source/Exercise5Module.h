@@ -7,6 +7,7 @@
 #include <wrl.h>
 #include <memory>
 #include <vector>
+#include <cstdint>
 
 #include "BasicModel.h"
 
@@ -25,6 +26,7 @@ public:
 private:
     bool createRootSignature();
     bool createPipelineState();
+    bool createTransformsBuffer();
     bool loadModel();
     bool createMaterialBuffers();
 
@@ -36,6 +38,21 @@ private:
 
     BasicModel model;
 
+    // ---------------------------------------------------------
+    // Per-frame/per-draw transforms (b0)
+    // ---------------------------------------------------------
+    struct TransformsCBData
+    {
+        Matrix mvp;
+    };
+
+    Microsoft::WRL::ComPtr<ID3D12Resource> transformsBuffer;
+    uint8_t* transformsMapped = nullptr;
+    size_t transformsCBSize = 0;
+
+    // ---------------------------------------------------------
+    // Material data (b1)
+    // ---------------------------------------------------------
     struct MaterialCBData
     {
         XMFLOAT4 colour;

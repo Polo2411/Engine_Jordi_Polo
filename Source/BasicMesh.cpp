@@ -6,6 +6,8 @@
 
 #include "gltf_utils.h"
 
+#include <vector>
+
 const D3D12_INPUT_ELEMENT_DESC BasicMesh::inputLayout[numVertexAttribs] =
 {
     { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
@@ -50,7 +52,34 @@ void BasicMesh::load(const tinygltf::Model& model, const tinygltf::Mesh& mesh, c
     loadAccessorData(vertexData + offsetof(Vertex, position), sizeof(Vector3), sizeof(Vertex), numVertices, model, itPos->second);
     loadAccessorData(vertexData + offsetof(Vertex, texCoord0), sizeof(Vector2), sizeof(Vertex), numVertices, model, primitive.attributes, "TEXCOORD_0");
     loadAccessorData(vertexData + offsetof(Vertex, normal), sizeof(Vector3), sizeof(Vertex), numVertices, model, primitive.attributes, "NORMAL");
-    loadAccessorData(vertexData + offsetof(Vertex, tangent), sizeof(Vector3), sizeof(Vertex), numVertices, model, primitive.attributes, "TANGENT");
+
+    // glTF tangents are commonly VEC4 (xyz + w sign). Try VEC3 first, then fallback to VEC4.
+    const bool tangentAsVec3 = loadAccessorData(vertexData + offsetof(Vertex, tangent), sizeof(Vector3), sizeof(Vertex), numVertices, model, primitive.attributes, "TANGENT");
+    if (!tangentAsVec3)
+    {
+        std::vector<Vector4> tangents4;
+        tangents4.resize(numVertices);
+
+        const bool tangentAsVec4 = loadAccessorData(
+            reinterpret_cast<uint8_t*>(tangents4.data()),
+            sizeof(Vector4),
+            sizeof(Vector4),
+            numVertices,
+            model,
+            primitive.attributes,
+            "TANGENT"
+        );
+
+        if (tangentAsVec4)
+        {
+            for (uint32_t i = 0; i < numVertices; ++i)
+            {
+                const Vector4& t = tangents4[i];
+                vertices[i].tangent = Vector3(t.x, t.y, t.z * t.w);
+            }
+        }
+        // If no tangent was loaded, we keep the default tangent (UnitX).
+    }
 
     vertexBuffer = resources->createDefaultBuffer(vertices.get(), numVertices * sizeof(Vertex), name.c_str());
     if (!vertexBuffer)
