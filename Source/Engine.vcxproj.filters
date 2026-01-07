@@ -56,6 +56,10 @@
     <ClCompile Include="Exercise5Module.cpp">
       <Filter>ExerciseModules</Filter>
     </ClCompile>
+    <ClCompile Include="ModuleRingBuffer.cpp" />
+    <ClCompile Include="Exercise6Module.cpp">
+      <Filter>ExerciseModules</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="3rdParty\imgui-1.89.8\backends\imgui_impl_win32.h" />
@@ -118,6 +122,10 @@
       <Filter>ExerciseModules</Filter>
     </ClInclude>
     <ClInclude Include="gltf_utils.h" />
+    <ClInclude Include="ModuleRingBuffer.h" />
+    <ClInclude Include="Exercise6Module.h">
+      <Filter>ExerciseModules</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Engine.rc" />
@@ -129,6 +137,9 @@
   <ItemGroup>
     <None Include="packages.config" />
     <None Include="SimpleMath.inl" />
+    <None Include="Exercise6.hlsli">
+      <Filter>ExerciseModules\Shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="ExerciseModules">
@@ -176,6 +187,12 @@
       <Filter>ExerciseModules\Shaders</Filter>
     </FxCompile>
     <FxCompile Include="Exercise5PS.hlsl">
+      <Filter>ExerciseModules\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Exercise6PS.hlsl">
+      <Filter>ExerciseModules\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Exercise6VS.hlsl">
       <Filter>ExerciseModules\Shaders</Filter>
     </FxCompile>
   </ItemGroup>

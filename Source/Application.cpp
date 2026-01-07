@@ -1,4 +1,5 @@
-﻿#include "Globals.h"
+﻿// Application.cpp
+#include "Globals.h"
 #include "Application.h"
 
 #include "ModuleInput.h"
@@ -9,7 +10,8 @@
 #include "Exercise2Module.h"
 #include "Exercise3Module.h"
 #include "Exercise4Module.h"
-#include "Exercise5Module.h" // Added: Exercise 5
+#include "Exercise5Module.h"
+#include "Exercise6Module.h"
 #include "Assignment1Module.h"
 
 #include "TimeManager.h"
@@ -17,8 +19,9 @@
 #include "ModuleCamera.h"
 #include "ModuleShaderDescriptors.h"
 #include "ModuleSamplers.h"
+#include "ModuleRingBuffer.h"
 
-Application::Application(int argc, wchar_t** argv, void* hWnd)
+Application::Application(int /*argc*/, wchar_t** /*argv*/, void* hWnd)
 {
     app = this;
 
@@ -28,36 +31,40 @@ Application::Application(int argc, wchar_t** argv, void* hWnd)
     modules.push_back(timeManager = new TimeManager());
     //modules.push_back(ui = new UIModule());
 
-    // Rendering-related helpers
+    // Rendering helpers (depend on device)
     modules.push_back(resources = new ModuleResources());
-    modules.push_back(camera = new ModuleCamera());
-    modules.push_back(samplers = new ModuleSamplers());
     modules.push_back(shaderDescriptors = new ModuleShaderDescriptors());
+    modules.push_back(samplers = new ModuleSamplers());
+    modules.push_back(ringBuffer = new ModuleRingBuffer()); // per-frame dynamic CB allocator
+    modules.push_back(camera = new ModuleCamera());
 
     // Exercises / assignments
     //modules.push_back(new Exercise1Module());
     //modules.push_back(new Exercise2Module());
     //modules.push_back(new Exercise3Module());
     //modules.push_back(new Exercise4Module());
-    modules.push_back(new Exercise5Module()); // Added: run Exercise 5
+    //modules.push_back(new Exercise5Module());
+    modules.push_back(new Exercise6Module());
     //modules.push_back(new Assignment1Module());
 }
 
 Application::~Application()
 {
-    // 1) Notify modules to release GPU/CPU resources
     cleanUp();
 
-    // 2) Destroy modules in reverse order
     for (auto it = modules.rbegin(); it != modules.rend(); ++it)
-    {
         delete* it;
-    }
+
     modules.clear();
 
-    resources = nullptr;
     d3d12 = nullptr;
+    ui = nullptr;
+    timeManager = nullptr;
+    resources = nullptr;
+    camera = nullptr;
     shaderDescriptors = nullptr;
+    samplers = nullptr;
+    ringBuffer = nullptr;
 
     app = nullptr;
 }
@@ -66,14 +73,26 @@ bool Application::init()
 {
     bool ret = true;
 
-    // Initialize all modules in order
     for (auto it = modules.begin(); it != modules.end() && ret; ++it)
         ret = (*it)->init();
 
-    // Note: ModuleResources is already part of 'modules', do not init twice.
-
     lastTime = std::chrono::steady_clock::now();
     return ret;
+}
+
+double Application::getAvgElapsedMs() const
+{
+    const double denom = double(MAX_FPS_TICKS);
+    const double avgS = (denom > 0.0) ? (tickSum / denom) : 0.0;
+    return avgS * 1000.0;
+}
+
+double Application::getFPS() const
+{
+    const double avgMs = getAvgElapsedMs();
+    if (avgMs <= 0.0001)
+        return 0.0;
+    return 1000.0 / avgMs;
 }
 
 void Application::update()
@@ -88,10 +107,11 @@ void Application::update()
 
     elapsedSeconds = dt.count();
 
+    // Clamp big stalls (debugger / alt-tab)
     const double maxFrameS = 0.25;
     if (elapsedSeconds > maxFrameS) elapsedSeconds = maxFrameS;
 
-    // FPS history (moving average)
+    // FPS moving average
     tickSum -= tickList[tickIndex];
     tickSum += elapsedSeconds;
     tickList[tickIndex] = elapsedSeconds;
@@ -99,19 +119,19 @@ void Application::update()
 
     if (!paused)
     {
-        // Update phase
+        // Update
         for (auto& m : modules) m->update();
 
-        // Pre-render phase (D3D12 first)
+        // Pre-render: D3D12 first (frame begin + allocator reset)
         if (d3d12) d3d12->preRender();
         for (auto& m : modules)
             if (m != d3d12) m->preRender();
 
-        // Render phase
+        // Render
         for (auto& m : modules)
             if (m != d3d12) m->render();
 
-        // Post-render phase (D3D12 last)
+        // Post-render: modules then D3D12 present
         for (auto& m : modules)
             if (m != d3d12) m->postRender();
         if (d3d12) d3d12->postRender();
@@ -122,15 +142,12 @@ void Application::update()
 
 bool Application::cleanUp()
 {
-    // Ensure GPU work is finished before shutdown
     if (d3d12)
         d3d12->flush();
 
     bool ret = true;
     for (auto it = modules.rbegin(); it != modules.rend() && ret; ++it)
-    {
         ret = (*it)->cleanUp();
-    }
 
     return ret;
 }

@@ -457,3 +457,4 @@ D3D12_CPU_DESCRIPTOR_HANDLE D3D12Module::getDepthStencilDescriptor()
     // DSV handle for the depth buffer
     return dsDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
 }
+

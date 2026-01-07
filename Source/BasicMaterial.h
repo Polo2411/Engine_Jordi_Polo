@@ -1,7 +1,9 @@
+// BasicMaterial.h
 #pragma once
 
 #include <string>
 #include <array>
+#include <algorithm> // std::clamp
 #include <wrl/client.h>
 #include <d3d12.h>
 
@@ -116,7 +118,6 @@ private:
     std::array<Microsoft::WRL::ComPtr<ID3D12Resource>, SLOT_COUNT> textures;
     std::string name;
 
-    // Table allocation
     uint32_t tableStartIndex = UINT32_MAX;
     D3D12_GPU_DESCRIPTOR_HANDLE texturesTableGpu{ 0 };
 };

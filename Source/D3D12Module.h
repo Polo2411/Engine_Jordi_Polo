@@ -58,6 +58,9 @@ public:
     unsigned getCurrentFrame() const { return frameIndex; }
     unsigned getLastCompletedFrame() const { return lastCompletedFrame; }
 
+    // Needed by RingBuffer to reclaim per-frame allocations safely
+    UINT getCurrentBackBufferIndex() const { return currentBackBufferIdx; }
+
     // Bind shader-visible descriptor heaps (CBV/SRV/UAV + samplers)
     void bindShaderVisibleHeaps(ID3D12GraphicsCommandList* cmdList);
 

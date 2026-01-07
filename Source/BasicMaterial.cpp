@@ -1,3 +1,4 @@
+// BasicMaterial.cpp
 #include "Globals.h"
 #include "BasicMaterial.h"
 
@@ -154,10 +155,18 @@ void BasicMaterial::setPhongMaterial(const PhongMaterialData& phong)
     if (materialType != PHONG)
         return;
 
-    materialData.phong = phong;
+    PhongMaterialData out = phong;
 
-    // Keep the texture flag consistent with the real SRV slot.
-    materialData.phong.hasDiffuseTex = hasTexture(SLOT_BASECOLOUR) ? TRUE : FALSE;
+    // Basic sanity clamps
+    out.Kd = std::clamp(out.Kd, 0.0f, 1.0f);
+    out.Ks = std::clamp(out.Ks, 0.0f, 1.0f);
+    out.shininess = (out.shininess < 1.0f) ? 1.0f : out.shininess;
+
+    // If we don't have a diffuse texture, we cannot enable it from UI.
+    if (!hasTexture(SLOT_BASECOLOUR))
+        out.hasDiffuseTex = FALSE;
+
+    materialData.phong = out;
 }
 
 void BasicMaterial::setPBRPhongMaterial(const PBRPhongMaterialData& pbr)
@@ -165,10 +174,14 @@ void BasicMaterial::setPBRPhongMaterial(const PBRPhongMaterialData& pbr)
     if (materialType != PBR_PHONG)
         return;
 
-    materialData.pbrPhong = pbr;
+    PBRPhongMaterialData out = pbr;
 
-    // Keep the texture flag consistent with the real SRV slot.
-    materialData.pbrPhong.hasDiffuseTex = hasTexture(SLOT_BASECOLOUR) ? TRUE : FALSE;
+    out.shininess = (out.shininess < 1.0f) ? 1.0f : out.shininess;
+
+    if (!hasTexture(SLOT_BASECOLOUR))
+        out.hasDiffuseTex = FALSE;
+
+    materialData.pbrPhong = out;
 }
 
 void BasicMaterial::setMetallicRoughnessMaterial(const MetallicRoughnessMaterialData& mr)
@@ -176,12 +189,19 @@ void BasicMaterial::setMetallicRoughnessMaterial(const MetallicRoughnessMaterial
     if (materialType != METALLIC_ROUGHNESS)
         return;
 
-    materialData.metallicRoughness = mr;
+    MetallicRoughnessMaterialData out = mr;
 
-    // Keep texture flags consistent with real SRV slots.
-    materialData.metallicRoughness.hasBaseColourTex = hasTexture(SLOT_BASECOLOUR) ? TRUE : FALSE;
-    materialData.metallicRoughness.hasMetallicRoughnessTex = hasTexture(SLOT_METALLIC_ROUGHNESS) ? TRUE : FALSE;
-    materialData.metallicRoughness.hasOcclusionTex = hasTexture(SLOT_OCCLUSION) ? TRUE : FALSE;
-    materialData.metallicRoughness.hasEmissive = hasTexture(SLOT_EMISSIVE) ? TRUE : FALSE;
-    materialData.metallicRoughness.hasNormalMap = hasTexture(SLOT_NORMAL) ? TRUE : FALSE;
+    out.metallicFactor = std::clamp(out.metallicFactor, 0.0f, 1.0f);
+    out.roughnessFactor = std::clamp(out.roughnessFactor, 0.0f, 1.0f);
+    out.occlusionStrength = std::clamp(out.occlusionStrength, 0.0f, 1.0f);
+    out.normalScale = (out.normalScale < 0.0f) ? 0.0f : out.normalScale;
+
+    // If the slot is missing, force the corresponding flag off.
+    if (!hasTexture(SLOT_BASECOLOUR))          out.hasBaseColourTex = FALSE;
+    if (!hasTexture(SLOT_METALLIC_ROUGHNESS))  out.hasMetallicRoughnessTex = FALSE;
+    if (!hasTexture(SLOT_OCCLUSION))           out.hasOcclusionTex = FALSE;
+    if (!hasTexture(SLOT_EMISSIVE))            out.hasEmissive = FALSE;
+    if (!hasTexture(SLOT_NORMAL))              out.hasNormalMap = FALSE;
+
+    materialData.metallicRoughness = out;
 }
