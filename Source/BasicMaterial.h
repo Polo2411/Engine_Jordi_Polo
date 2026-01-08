@@ -4,51 +4,31 @@
 #include <string>
 #include <array>
 #include <algorithm> // std::clamp
+#include <cstdint>
+
 #include <wrl/client.h>
 #include <d3d12.h>
+#include <DirectXMath.h>
 
 namespace tinygltf { class Model; struct Material; }
 
+using namespace DirectX;
+
 struct BasicMaterialData
 {
-    XMFLOAT4 baseColour;
-    BOOL     hasColourTexture;
+    XMFLOAT4 baseColour = XMFLOAT4(1, 1, 1, 1);
+    BOOL     hasColourTexture = FALSE;
     UINT     padding[3] = { 0, 0, 0 };
 };
 
 struct PhongMaterialData
 {
-    XMFLOAT4 diffuseColour;
-    float    Kd;
-    float    Ks;
-    float    shininess;
-    BOOL     hasDiffuseTex;
+    XMFLOAT4 diffuseColour = XMFLOAT4(1, 1, 1, 1);
+    float    Kd = 0.85f;
+    float    Ks = 0.35f;
+    float    shininess = 32.0f;
+    BOOL     hasDiffuseTex = FALSE;
     UINT     padding[3] = { 0, 0, 0 };
-};
-
-struct PBRPhongMaterialData
-{
-    XMFLOAT3 diffuseColour;
-    BOOL     hasDiffuseTex;
-
-    XMFLOAT3 specularColour;
-    float    shininess;
-};
-
-struct MetallicRoughnessMaterialData
-{
-    XMFLOAT4 baseColour;
-    float    metallicFactor;
-    float    roughnessFactor;
-    float    occlusionStrength;
-    float    normalScale;
-    XMFLOAT3 emissiveFactor;
-
-    BOOL     hasBaseColourTex;
-    BOOL     hasMetallicRoughnessTex;
-    BOOL     hasOcclusionTex;
-    BOOL     hasNormalMap;
-    BOOL     hasEmissive;
 };
 
 class BasicMaterial
@@ -57,19 +37,14 @@ public:
     enum Type
     {
         BASIC = 0,
-        PHONG,
-        PBR_PHONG,
-        METALLIC_ROUGHNESS
+        PHONG
     };
 
+    // Only t0 is used in Exercise 6
     enum TextureSlot
     {
         SLOT_BASECOLOUR = 0,
-        SLOT_METALLIC_ROUGHNESS = 1,
-        SLOT_OCCLUSION = 2,
-        SLOT_EMISSIVE = 3,
-        SLOT_NORMAL = 4,
-        SLOT_COUNT = 5
+        SLOT_COUNT = 1
     };
 
 public:
@@ -82,17 +57,13 @@ public:
 
     const BasicMaterialData& getBasicMaterial() const { _ASSERTE(materialType == BASIC); return materialData.basic; }
     const PhongMaterialData& getPhongMaterial() const { _ASSERTE(materialType == PHONG); return materialData.phong; }
-    const PBRPhongMaterialData& getPBRPhongMaterial() const { _ASSERTE(materialType == PBR_PHONG); return materialData.pbrPhong; }
-    const MetallicRoughnessMaterialData& getMetallicRoughnessMaterial() const { _ASSERTE(materialType == METALLIC_ROUGHNESS); return materialData.metallicRoughness; }
 
-    // Runtime editing helpers (UI). They keep texture flags consistent with loaded slots.
+    // UI helper (used by Exercise6Module)
     void setPhongMaterial(const PhongMaterialData& phong);
-    void setPBRPhongMaterial(const PBRPhongMaterialData& pbr);
-    void setMetallicRoughnessMaterial(const MetallicRoughnessMaterialData& mr);
 
     const char* getName() const { return name.c_str(); }
 
-    // Descriptor table start handle (t0..t4 contiguous)
+    // Descriptor table start handle (t0 contiguous)
     D3D12_GPU_DESCRIPTOR_HANDLE getTexturesTableGPU() const { return texturesTableGpu; }
 
 private:
@@ -107,10 +78,8 @@ private:
 private:
     union
     {
-        BasicMaterialData             basic;
-        PhongMaterialData             phong;
-        PBRPhongMaterialData          pbrPhong;
-        MetallicRoughnessMaterialData metallicRoughness;
+        BasicMaterialData basic;
+        PhongMaterialData phong;
     } materialData = {};
 
     Type materialType = BASIC;

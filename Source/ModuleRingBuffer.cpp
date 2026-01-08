@@ -5,6 +5,8 @@
 #include "D3D12Module.h"
 #include "d3dx12.h"
 
+#include <cstring> // memcpy
+
 bool ModuleRingBuffer::init()
 {
     totalMemorySize = alignUp(kDefaultTotalSizeBytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
@@ -44,8 +46,31 @@ bool ModuleRingBuffer::init()
     for (unsigned i = 0; i < kFramesInFlight; ++i)
         allocatedInFrame[i] = 0;
 
+    // Must match swapchain's current backbuffer index
     currentFrameIdx = d3d12->getCurrentBackBufferIndex() % kFramesInFlight;
 
+    return true;
+}
+
+bool ModuleRingBuffer::cleanUp()
+{
+    if (buffer && bufferData)
+    {
+        buffer->Unmap(0, nullptr);
+        bufferData = nullptr;
+    }
+
+    buffer.Reset();
+
+    totalMemorySize = 0;
+    head = 0;
+    tail = 0;
+    totalAllocated = 0;
+
+    for (unsigned i = 0; i < kFramesInFlight; ++i)
+        allocatedInFrame[i] = 0;
+
+    currentFrameIdx = 0;
     return true;
 }
 
@@ -55,12 +80,14 @@ void ModuleRingBuffer::preRender()
     if (!d3d12)
         return;
 
+    // IMPORTANT: call this AFTER D3D12 preRender / fence sync
     currentFrameIdx = d3d12->getCurrentBackBufferIndex() % kFramesInFlight;
 
     const size_t reclaimed = allocatedInFrame[currentFrameIdx];
     if (reclaimed > 0)
     {
         tail = (tail + reclaimed) % totalMemorySize;
+
         totalAllocated = (totalAllocated >= reclaimed) ? (totalAllocated - reclaimed) : 0;
         allocatedInFrame[currentFrameIdx] = 0;
     }
@@ -71,21 +98,20 @@ D3D12_GPU_VIRTUAL_ADDRESS ModuleRingBuffer::allocBufferRaw(const void* data, siz
     if (!buffer || !bufferData || !data || size == 0)
         return 0;
 
+    // Must be 256-aligned size (CB alignment)
     if ((size & (D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT - 1)) != 0)
         return 0;
 
     if (size > totalMemorySize)
         return 0;
 
+    // Hard out-of-memory
     if (totalAllocated + size > totalMemorySize)
-    {
-        // Out of space this frame; caller should handle 0 (skip draw / increase pool size).
         return 0;
-    }
 
     auto commit = [&](size_t offset) -> D3D12_GPU_VIRTUAL_ADDRESS
         {
-            memcpy(bufferData + offset, data, size);
+            std::memcpy(bufferData + offset, data, size);
             allocatedInFrame[currentFrameIdx] += size;
             totalAllocated += size;
             return buffer->GetGPUVirtualAddress() + offset;
@@ -98,7 +124,7 @@ D3D12_GPU_VIRTUAL_ADDRESS ModuleRingBuffer::allocBufferRaw(const void* data, siz
         if (availableToEnd >= size)
         {
             const D3D12_GPU_VIRTUAL_ADDRESS addr = commit(head);
-            head += size;
+            head += size; // may become == totalMemorySize (ok)
             return addr;
         }
 
@@ -113,7 +139,7 @@ D3D12_GPU_VIRTUAL_ADDRESS ModuleRingBuffer::allocBufferRaw(const void* data, siz
     if (available >= size)
     {
         const D3D12_GPU_VIRTUAL_ADDRESS addr = commit(head);
-        head += size;
+        head += size; // may become == totalMemorySize (ok)
         return addr;
     }
 

@@ -19,6 +19,7 @@
 #include <filesystem>
 #include <string>
 #include <algorithm>
+#include <cmath>    // fabsf
 
 using namespace DirectX;
 namespace fs = std::filesystem;
@@ -149,7 +150,8 @@ bool Exercise6Module::cleanUp()
 // ---------------------------------------------------------
 Matrix Exercise6Module::computeNormalMatrixSafe(const Matrix& modelM)
 {
-    // Normal matrix should ignore translation.
+    // Return inverse(model) with translation removed.
+    // Caller uploads Transpose() to match mul(vector, matrix) convention in HLSL.
     Matrix m = modelM;
     m._41 = 0.0f; m._42 = 0.0f; m._43 = 0.0f;
 
@@ -157,8 +159,7 @@ Matrix Exercise6Module::computeNormalMatrixSafe(const Matrix& modelM)
     if (fabsf(det) < 1e-8f)
         return Matrix::Identity;
 
-    Matrix inv = m.Invert();
-    return inv.Transpose();
+    return m.Invert();
 }
 
 // ---------------------------------------------------------
@@ -172,7 +173,6 @@ void Exercise6Module::imGuiCommands(const Matrix& view, const Matrix& proj)
     const double avgMs = UpdateAvgMs(msHistory, kAvgWindow, msIndex, msCount, ms);
     const uint32_t fps = (dt > 0.0) ? uint32_t(1.0 / dt) : 0;
 
-    // Window size (touch this to make it bigger)
     ImGui::SetNextWindowSize(ImVec2(520.0f, 720.0f), ImGuiCond_FirstUseEver);
     ImGui::Begin("Geometry Viewer Options");
 
@@ -226,7 +226,6 @@ void Exercise6Module::imGuiCommands(const Matrix& view, const Matrix& proj)
         model.setModelMatrix(objectMatrix);
     }
 
-    // Light section
     if (ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::DragFloat3("Light Direction", reinterpret_cast<float*>(&light.L), 0.1f, -1.0f, 1.0f);
@@ -240,7 +239,6 @@ void Exercise6Module::imGuiCommands(const Matrix& view, const Matrix& proj)
         ImGui::ColorEdit3("Ambient Colour", reinterpret_cast<float*>(&light.Ac), ImGuiColorEditFlags_NoAlpha);
     }
 
-    // Materials section (Phong)
     auto& mats = model.getMaterials();
     for (size_t i = 0; i < mats.size(); ++i)
     {
@@ -249,7 +247,7 @@ void Exercise6Module::imGuiCommands(const Matrix& view, const Matrix& proj)
             continue;
 
         char header[256]{};
-        _snprintf_s(header, 255, "Materila %s", mat.getName()); // keep professor typo if you want exact UI
+        _snprintf_s(header, 255, "Materila %s", mat.getName());
 
         if (ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen))
         {
@@ -277,8 +275,6 @@ void Exercise6Module::imGuiCommands(const Matrix& view, const Matrix& proj)
 
             if (dirty)
             {
-                // This is the key: use the setter you already wrote.
-                // It clamps values and disables texture if slot doesn't exist.
                 mat.setPhongMaterial(ph);
             }
         }
@@ -286,7 +282,6 @@ void Exercise6Module::imGuiCommands(const Matrix& view, const Matrix& proj)
 
     ImGui::End();
 
-    // Gizmo
     if (!showGuizmo)
         return;
 
@@ -326,7 +321,6 @@ void Exercise6Module::render()
 
     BEGIN_EVENT(commandList, "Exercise6 Frame");
 
-    // Backbuffer: PRESENT -> RT
     {
         CD3DX12_RESOURCE_BARRIER barrier =
             CD3DX12_RESOURCE_BARRIER::Transition(
@@ -339,7 +333,6 @@ void Exercise6Module::render()
     const unsigned width = d3d12->getWindowWidth();
     const unsigned height = d3d12->getWindowHeight();
 
-    // Camera
     Matrix view = Matrix::Identity;
     Matrix proj = Matrix::Identity;
 
@@ -360,7 +353,7 @@ void Exercise6Module::render()
 
     const uint32_t frameSlot = (d3d12->getCurrentFrame() % kFramesInFlight);
 
-    // Update MVP (b0)
+    // b0
     const Matrix mvp = (model.getModelMatrix() * view * proj).Transpose();
     if (mvpMapped)
     {
@@ -369,7 +362,7 @@ void Exercise6Module::render()
         memcpy(mvpMapped + (frameSlot * mvpStride), &cb, sizeof(cb));
     }
 
-    // Update PerFrame (b1)
+    // b1
     if (perFrameMapped)
     {
         PerFrameData pf{};
@@ -379,14 +372,13 @@ void Exercise6Module::render()
         pf.Ac = light.Ac;
 
         if (ModuleCamera* cam = app->getCamera())
-            pf.viewPos = cam->getPosition(); // rename if needed
+            pf.viewPos = cam->getPosition();
         else
             pf.viewPos = Vector3(0.0f, 2.0f, 6.0f);
 
         memcpy(perFrameMapped + (frameSlot * perFrameStride), &pf, sizeof(pf));
     }
 
-    // Viewport / Scissor
     D3D12_VIEWPORT viewport{};
     viewport.TopLeftX = 0.0f;
     viewport.TopLeftY = 0.0f;
@@ -401,7 +393,7 @@ void Exercise6Module::render()
     scissor.right = LONG(width);
     scissor.bottom = LONG(height);
 
-    // Clear (touch this to change background color)
+    // Clear (UNCHANGED)
     {
         float clearColor[] = { 0.05f, 0.05f, 0.06f, 1.0f };
 
@@ -413,7 +405,6 @@ void Exercise6Module::render()
         commandList->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
     }
 
-    // Pipeline setup
     commandList->SetGraphicsRootSignature(rootSignature.Get());
     commandList->RSSetViewports(1, &viewport);
     commandList->RSSetScissorRects(1, &scissor);
@@ -427,19 +418,15 @@ void Exercise6Module::render()
 
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    // b0
     commandList->SetGraphicsRootConstantBufferView(
         0, mvpBuffer->GetGPUVirtualAddress() + (frameSlot * mvpStride));
 
-    // b1
     commandList->SetGraphicsRootConstantBufferView(
         1, perFrameBuffer->GetGPUVirtualAddress() + (frameSlot * perFrameStride));
 
-    // s0
     commandList->SetGraphicsRootDescriptorTable(
         4, app->getSamplers()->getGPUHandle(currentSampler));
 
-    // Draw model
     {
         const auto& meshes = model.getMeshes();
         const auto& mats = model.getMaterials();
@@ -455,15 +442,15 @@ void Exercise6Module::render()
 
             const BasicMaterial& mat = mats[(size_t)matIndex];
 
-            // PerInstance (b2)
             if (perInstanceMapped)
             {
                 PerInstanceData pi{};
+
                 const Matrix modelM = model.getModelMatrix();
-                const Matrix normalM = computeNormalMatrixSafe(modelM);
+                const Matrix invNoTranslation = computeNormalMatrixSafe(modelM);
 
                 pi.modelMat = modelM.Transpose();
-                pi.normalMat = normalM.Transpose();
+                pi.normalMat = invNoTranslation.Transpose(); // inverse-transpose uploaded
                 pi.material = mat.getPhongMaterial();
 
                 const size_t instanceOffset = (frameSlot * meshCount + meshIdx) * perInstanceStride;
@@ -473,14 +460,12 @@ void Exercise6Module::render()
                     2, perInstanceBuffer->GetGPUVirtualAddress() + instanceOffset);
             }
 
-            // t0..t4
             commandList->SetGraphicsRootDescriptorTable(3, mat.getTexturesTableGPU());
-
             mesh.draw(commandList);
         }
     }
 
-    // Debug draw (touch these params to change grid size / axis scale)
+    // Debug draw (UNCHANGED)
     {
         if (showGrid)
             dd::xzSquareGrid(-50.0f, 50.0f, 0.0f, 1.0f, dd::colors::LightGray);
@@ -502,7 +487,6 @@ void Exercise6Module::render()
         }
     }
 
-    // Backbuffer: RT -> PRESENT
     {
         CD3DX12_RESOURCE_BARRIER barrier =
             CD3DX12_RESOURCE_BARRIER::Transition(

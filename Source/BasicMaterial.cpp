@@ -37,13 +37,13 @@ void BasicMaterial::initNullTable()
 {
     ModuleShaderDescriptors* descriptors = app->getShaderDescriptors();
 
-    // Allocate a contiguous block for t0..t4
+    // Allocate a contiguous block for t0
     tableStartIndex = descriptors->allocateRange(SLOT_COUNT);
     _ASSERTE(tableStartIndex != UINT32_MAX);
 
     texturesTableGpu = descriptors->getGPUHandle(tableStartIndex);
 
-    // Fill with null SRVs by default
+    // Fill with null SRV by default
     for (uint32_t i = 0; i < SLOT_COUNT; ++i)
     {
         descriptors->writeNullTexture2DSRV(tableStartIndex + i);
@@ -97,56 +97,20 @@ void BasicMaterial::load(const tinygltf::Model& model, const tinygltf::Material&
             float(pbr.baseColorFactor[3]));
     }
 
-    const bool hasColourTex = loadTextureIntoSlot(model, pbr.baseColorTexture.index, basePath, SLOT_BASECOLOUR);
+    const bool hasBaseTex = loadTextureIntoSlot(model, pbr.baseColorTexture.index, basePath, SLOT_BASECOLOUR);
 
     if (materialType == BASIC)
     {
         materialData.basic.baseColour = XMFLOAT4(baseColour.x, baseColour.y, baseColour.z, baseColour.w);
-        materialData.basic.hasColourTexture = hasColourTex ? TRUE : FALSE;
+        materialData.basic.hasColourTexture = hasBaseTex ? TRUE : FALSE;
     }
-    else if (materialType == PHONG)
+    else // PHONG
     {
         materialData.phong.diffuseColour = XMFLOAT4(baseColour.x, baseColour.y, baseColour.z, baseColour.w);
         materialData.phong.Kd = 0.85f;
         materialData.phong.Ks = 0.35f;
         materialData.phong.shininess = 32.0f;
-        materialData.phong.hasDiffuseTex = hasColourTex ? TRUE : FALSE;
-    }
-    else if (materialType == PBR_PHONG)
-    {
-        materialData.pbrPhong.diffuseColour = XMFLOAT3(baseColour.x, baseColour.y, baseColour.z);
-        materialData.pbrPhong.hasDiffuseTex = hasColourTex ? TRUE : FALSE;
-        materialData.pbrPhong.specularColour = XMFLOAT3(0.015f, 0.015f, 0.015f);
-        materialData.pbrPhong.shininess = 64.0f;
-    }
-    else if (materialType == METALLIC_ROUGHNESS)
-    {
-        const bool hasMR = loadTextureIntoSlot(model, pbr.metallicRoughnessTexture.index, basePath, SLOT_METALLIC_ROUGHNESS);
-        const bool hasOcc = loadTextureIntoSlot(model, material.occlusionTexture.index, basePath, SLOT_OCCLUSION);
-        const bool hasEmi = loadTextureIntoSlot(model, material.emissiveTexture.index, basePath, SLOT_EMISSIVE);
-        const bool hasNrm = loadTextureIntoSlot(model, material.normalTexture.index, basePath, SLOT_NORMAL);
-
-        Vector3 emissiveFactor = Vector3::Zero;
-        if (material.emissiveFactor.size() >= 3)
-        {
-            emissiveFactor = Vector3(
-                float(material.emissiveFactor[0]),
-                float(material.emissiveFactor[1]),
-                float(material.emissiveFactor[2]));
-        }
-
-        materialData.metallicRoughness.baseColour = XMFLOAT4(baseColour.x, baseColour.y, baseColour.z, baseColour.w);
-        materialData.metallicRoughness.metallicFactor = float(pbr.metallicFactor);
-        materialData.metallicRoughness.roughnessFactor = float(pbr.roughnessFactor);
-        materialData.metallicRoughness.occlusionStrength = float(material.occlusionTexture.strength);
-        materialData.metallicRoughness.normalScale = float(material.normalTexture.scale);
-        materialData.metallicRoughness.emissiveFactor = XMFLOAT3(emissiveFactor.x, emissiveFactor.y, emissiveFactor.z);
-
-        materialData.metallicRoughness.hasBaseColourTex = hasColourTex ? TRUE : FALSE;
-        materialData.metallicRoughness.hasMetallicRoughnessTex = hasMR ? TRUE : FALSE;
-        materialData.metallicRoughness.hasOcclusionTex = hasOcc ? TRUE : FALSE;
-        materialData.metallicRoughness.hasEmissive = hasEmi ? TRUE : FALSE;
-        materialData.metallicRoughness.hasNormalMap = hasNrm ? TRUE : FALSE;
+        materialData.phong.hasDiffuseTex = hasBaseTex ? TRUE : FALSE;
     }
 }
 
@@ -157,51 +121,13 @@ void BasicMaterial::setPhongMaterial(const PhongMaterialData& phong)
 
     PhongMaterialData out = phong;
 
-    // Basic sanity clamps
     out.Kd = std::clamp(out.Kd, 0.0f, 1.0f);
     out.Ks = std::clamp(out.Ks, 0.0f, 1.0f);
     out.shininess = (out.shininess < 1.0f) ? 1.0f : out.shininess;
 
-    // If we don't have a diffuse texture, we cannot enable it from UI.
+    // If no texture was loaded, UI cannot enable it.
     if (!hasTexture(SLOT_BASECOLOUR))
         out.hasDiffuseTex = FALSE;
 
     materialData.phong = out;
-}
-
-void BasicMaterial::setPBRPhongMaterial(const PBRPhongMaterialData& pbr)
-{
-    if (materialType != PBR_PHONG)
-        return;
-
-    PBRPhongMaterialData out = pbr;
-
-    out.shininess = (out.shininess < 1.0f) ? 1.0f : out.shininess;
-
-    if (!hasTexture(SLOT_BASECOLOUR))
-        out.hasDiffuseTex = FALSE;
-
-    materialData.pbrPhong = out;
-}
-
-void BasicMaterial::setMetallicRoughnessMaterial(const MetallicRoughnessMaterialData& mr)
-{
-    if (materialType != METALLIC_ROUGHNESS)
-        return;
-
-    MetallicRoughnessMaterialData out = mr;
-
-    out.metallicFactor = std::clamp(out.metallicFactor, 0.0f, 1.0f);
-    out.roughnessFactor = std::clamp(out.roughnessFactor, 0.0f, 1.0f);
-    out.occlusionStrength = std::clamp(out.occlusionStrength, 0.0f, 1.0f);
-    out.normalScale = (out.normalScale < 0.0f) ? 0.0f : out.normalScale;
-
-    // If the slot is missing, force the corresponding flag off.
-    if (!hasTexture(SLOT_BASECOLOUR))          out.hasBaseColourTex = FALSE;
-    if (!hasTexture(SLOT_METALLIC_ROUGHNESS))  out.hasMetallicRoughnessTex = FALSE;
-    if (!hasTexture(SLOT_OCCLUSION))           out.hasOcclusionTex = FALSE;
-    if (!hasTexture(SLOT_EMISSIVE))            out.hasEmissive = FALSE;
-    if (!hasTexture(SLOT_NORMAL))              out.hasNormalMap = FALSE;
-
-    materialData.metallicRoughness = out;
 }
