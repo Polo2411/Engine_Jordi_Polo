@@ -1,4 +1,3 @@
-// BasicMaterial.cpp
 #include "Globals.h"
 #include "BasicMaterial.h"
 
@@ -107,11 +106,14 @@ void BasicMaterial::load(const tinygltf::Model& model, const tinygltf::Material&
     else // PHONG
     {
         materialData.phong.diffuseColour = XMFLOAT4(baseColour.x, baseColour.y, baseColour.z, baseColour.w);
-        materialData.phong.Kd = 0.85f;
-        materialData.phong.Ks = 0.35f;
-        materialData.phong.shininess = 32.0f;
+
+        // Professor defaults (Exercise7 baseline)
+        materialData.phong.specularColour = XMFLOAT3(0.015f, 0.015f, 0.015f);
+        materialData.phong.shininess = 64.0f;
+
         materialData.phong.hasDiffuseTex = hasBaseTex ? TRUE : FALSE;
     }
+
 }
 
 void BasicMaterial::setPhongMaterial(const PhongMaterialData& phong)
@@ -121,13 +123,16 @@ void BasicMaterial::setPhongMaterial(const PhongMaterialData& phong)
 
     PhongMaterialData out = phong;
 
-    out.Kd = std::clamp(out.Kd, 0.0f, 1.0f);
-    out.Ks = std::clamp(out.Ks, 0.0f, 1.0f);
+    // Clamp diffuse in [0..1] is usually handled in UI, but ok to keep.
+    out.specularColour.x = std::clamp(out.specularColour.x, 0.0f, 1.0f);
+    out.specularColour.y = std::clamp(out.specularColour.y, 0.0f, 1.0f);
+    out.specularColour.z = std::clamp(out.specularColour.z, 0.0f, 1.0f);
+
     out.shininess = (out.shininess < 1.0f) ? 1.0f : out.shininess;
 
-    // If no texture was loaded, UI cannot enable it.
     if (!hasTexture(SLOT_BASECOLOUR))
         out.hasDiffuseTex = FALSE;
 
     materialData.phong = out;
 }
+

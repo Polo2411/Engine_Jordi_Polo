@@ -61,10 +61,9 @@ private:
     {
         Matrix modelMat;
         Matrix normalMat;
-        PhongMaterialData material;
+        PhongMaterialData material; // Cd + F0 + shininess + hasDiffuseTex
     };
 
-    // UI Light (like the professor)
     struct Light
     {
         Vector3 L = Vector3(-0.7f, -0.14f, -0.7f);

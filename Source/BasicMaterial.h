@@ -1,4 +1,3 @@
-// BasicMaterial.h
 #pragma once
 
 #include <string>
@@ -21,15 +20,20 @@ struct BasicMaterialData
     UINT     padding[3] = { 0, 0, 0 };
 };
 
+// Phong BRDF (Energy-conserving + Fresnel uses F0 = specularColour)
 struct PhongMaterialData
 {
     XMFLOAT4 diffuseColour = XMFLOAT4(1, 1, 1, 1);
-    float    Kd = 0.85f;
-    float    Ks = 0.35f;
-    float    shininess = 32.0f;
+
+    // Fresnel at 0 degrees (F0)
+    XMFLOAT3 specularColour = XMFLOAT3(0.015f, 0.015f, 0.015f);
+
+    float    shininess = 64.0f;
+
     BOOL     hasDiffuseTex = FALSE;
     UINT     padding[3] = { 0, 0, 0 };
 };
+
 
 class BasicMaterial
 {

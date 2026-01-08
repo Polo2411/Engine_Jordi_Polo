@@ -1,4 +1,4 @@
-#include "Globals.h"
+﻿#include "Globals.h"
 #include "Exercise6Module.h"
 
 #include "Application.h"
@@ -82,42 +82,13 @@ namespace
         return (count > 0) ? (sum / double(count)) : 0.0;
     }
 
-    Vector3 TransformPoint(const Vector3& p, const Matrix& m)
-    {
-        return Vector3::Transform(p, m);
-    }
-
-    float MaxScaleFromMatrix(const Matrix& m)
-    {
-        // Row-vector convention (SimpleMath). Scale is in the first 3 rows.
-        const Vector3 x(m._11, m._12, m._13);
-        const Vector3 y(m._21, m._22, m._23);
-        const Vector3 z(m._31, m._32, m._33);
-
-        const float sx = x.Length();
-        const float sy = y.Length();
-        const float sz = z.Length();
-
-        return std::max(sx, std::max(sy, sz));
-    }
-
-    // Keep camera pivot on the duck transform (world translation).
-    void UpdateCameraFocusFromModel(ModuleCamera* cam, const Matrix& modelM)
+    void UpdateCameraPivotToModel(ModuleCamera* cam, const Matrix& modelM)
     {
         if (!cam) return;
-
         const Vector3 center(modelM._41, modelM._42, modelM._43);
 
-        // Approx world scale from matrix rows (SimpleMath is row-major).
-        const float sx = Vector3(modelM._11, modelM._12, modelM._13).Length();
-        const float sy = Vector3(modelM._21, modelM._22, modelM._23).Length();
-        const float sz = Vector3(modelM._31, modelM._32, modelM._33).Length();
-        const float maxS = std::max(sx, std::max(sy, sz));
-
-        // Duck size varies per asset; clamp to avoid tiny radius when scaling down.
-        const float radius = std::max(0.25f, 1.0f * maxS);
-
-        cam->setFocusBounds(center, radius);
+        // Simple stable radius (no bounds system)
+        cam->setFocusBounds(center, 2.5f);
     }
 }
 
@@ -135,8 +106,7 @@ bool Exercise6Module::init()
 
     if (ok)
     {
-        // Initialize camera focus on the loaded model (duck).
-        UpdateCameraFocusFromModel(app->getCamera(), model.getModelMatrix());
+        UpdateCameraPivotToModel(app->getCamera(), model.getModelMatrix());
 
         D3D12Module* d3d12 = app->getD3D12Module();
 
@@ -191,8 +161,6 @@ bool Exercise6Module::cleanUp()
 // ---------------------------------------------------------
 Matrix Exercise6Module::computeNormalMatrixSafe(const Matrix& modelM)
 {
-    // Return inverse(model) with translation removed.
-    // Caller uploads Transpose() to match mul(vector, matrix) convention in HLSL.
     Matrix m = modelM;
     m._41 = 0.0f; m._42 = 0.0f; m._43 = 0.0f;
 
@@ -205,7 +173,6 @@ Matrix Exercise6Module::computeNormalMatrixSafe(const Matrix& modelM)
 
 // ---------------------------------------------------------
 // ImGui + ImGuizmo
-// Uses BasicMaterial::setPhongMaterial (no duplicated material caches)
 // ---------------------------------------------------------
 void Exercise6Module::imGuiCommands(const Matrix& view, const Matrix& proj)
 {
@@ -265,22 +232,30 @@ void Exercise6Module::imGuiCommands(const Matrix& view, const Matrix& proj)
     {
         ImGuizmo::RecomposeMatrixFromComponents(translation, rotation, scale, (float*)&objectMatrix);
         model.setModelMatrix(objectMatrix);
-
-        // Keep orbit/focus pivot on the duck.
-        UpdateCameraFocusFromModel(app->getCamera(), objectMatrix);
+        UpdateCameraPivotToModel(app->getCamera(), objectMatrix);
     }
 
     if (ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        ImGui::DragFloat3("Light Direction", reinterpret_cast<float*>(&light.L), 0.1f, -1.0f, 1.0f);
+        bool lightDirty = false;
+
+        lightDirty |= ImGui::DragFloat3("Light Direction", reinterpret_cast<float*>(&light.L), 0.1f, -1.0f, 1.0f);
+        lightDirty |= ImGui::IsItemDeactivatedAfterEdit();
+
         ImGui::SameLine();
         if (ImGui::SmallButton("Normalize"))
         {
             light.L.Normalize();
+            lightDirty = true;
         }
 
-        ImGui::ColorEdit3("Light Colour", reinterpret_cast<float*>(&light.Lc), ImGuiColorEditFlags_NoAlpha);
-        ImGui::ColorEdit3("Ambient Colour", reinterpret_cast<float*>(&light.Ac), ImGuiColorEditFlags_NoAlpha);
+        lightDirty |= ImGui::ColorEdit3("Light Colour", reinterpret_cast<float*>(&light.Lc), ImGuiColorEditFlags_NoAlpha);
+        lightDirty |= ImGui::IsItemDeactivatedAfterEdit();
+
+        lightDirty |= ImGui::ColorEdit3("Ambient Colour", reinterpret_cast<float*>(&light.Ac), ImGuiColorEditFlags_NoAlpha);
+        lightDirty |= ImGui::IsItemDeactivatedAfterEdit();
+
+        (void)lightDirty;
     }
 
     auto& mats = model.getMaterials();
@@ -291,16 +266,18 @@ void Exercise6Module::imGuiCommands(const Matrix& view, const Matrix& proj)
             continue;
 
         char header[256]{};
-        _snprintf_s(header, 255, "Materila %s", mat.getName());
+        _snprintf_s(header, 255, "Material %s", mat.getName());
 
         if (ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen))
         {
             PhongMaterialData ph = mat.getPhongMaterial();
             bool dirty = false;
 
-            if (ImGui::ColorEdit3("Diffuse Colour", reinterpret_cast<float*>(&ph.diffuseColour)))
-                dirty = true;
+            // Diffuse
+            dirty |= ImGui::ColorEdit3("Diffuse Colour (Cd)", reinterpret_cast<float*>(&ph.diffuseColour), ImGuiColorEditFlags_NoAlpha);
+            dirty |= ImGui::IsItemDeactivatedAfterEdit();
 
+            // Use Texture (must be BEFORE specular, like your screenshot)
             bool useTex = (ph.hasDiffuseTex != FALSE);
             if (ImGui::Checkbox("Use Texture", &useTex))
             {
@@ -308,19 +285,16 @@ void Exercise6Module::imGuiCommands(const Matrix& view, const Matrix& proj)
                 dirty = true;
             }
 
-            if (ImGui::DragFloat("Kd", &ph.Kd, 0.01f))
-                dirty = true;
+            // Specular (F0) AFTER the texture toggle
+            dirty |= ImGui::ColorEdit3("Specular Colour (F0)", reinterpret_cast<float*>(&ph.specularColour), ImGuiColorEditFlags_NoAlpha);
+            dirty |= ImGui::IsItemDeactivatedAfterEdit();
 
-            if (ImGui::DragFloat("Ks", &ph.Ks, 0.01f))
-                dirty = true;
-
-            if (ImGui::DragFloat("shininess", &ph.shininess))
-                dirty = true;
+            // Shininess
+            dirty |= ImGui::DragFloat("Shininess (n)", &ph.shininess, 1.0f, 1.0f, 2048.0f);
+            dirty |= ImGui::IsItemDeactivatedAfterEdit();
 
             if (dirty)
-            {
                 mat.setPhongMaterial(ph);
-            }
         }
     }
 
@@ -352,11 +326,11 @@ void Exercise6Module::imGuiCommands(const Matrix& view, const Matrix& proj)
     if (ImGuizmo::IsUsing())
     {
         model.setModelMatrix(objectMatrix);
-
-        // Keep orbit/focus pivot on the duck.
-        UpdateCameraFocusFromModel(app->getCamera(), objectMatrix);
+        UpdateCameraPivotToModel(app->getCamera(), objectMatrix);
     }
 }
+
+
 
 // ---------------------------------------------------------
 // render
@@ -388,34 +362,6 @@ void Exercise6Module::render()
     if (ModuleCamera* cam = app->getCamera())
     {
         cam->setAspectRatio((height > 0) ? (float(width) / float(height)) : 1.0f);
-
-        // --- Unity-like pivot/focus: always use model bounds in world space ---
-        const Matrix modelM = model.getModelMatrix();
-
-        // Fallback pivot = model translation
-        Vector3 centerW(modelM._41, modelM._42, modelM._43);
-        float radiusW = 1.0f;
-
-        // If you added bounds to BasicModel (recommended):
-        if (model.hasLocalBounds())
-        {
-            const Vector3 localCenter = model.getLocalBoundsCenter();
-            const float localRadius = model.getLocalBoundsRadius();
-
-            centerW = TransformPoint(localCenter, modelM);
-
-            const float maxS = MaxScaleFromMatrix(modelM);
-            radiusW = std::max(localRadius * maxS, 0.01f);
-        }
-        else
-        {
-            // No bounds available: approximate radius from scale
-            radiusW = std::max(MaxScaleFromMatrix(modelM), 0.01f);
-        }
-
-        cam->setFocusBounds(centerW, radiusW);
-        // -------------------------------------------------------
-
         view = cam->getViewMatrix();
         proj = cam->getProjectionMatrix();
     }
@@ -470,7 +416,7 @@ void Exercise6Module::render()
     scissor.right = LONG(width);
     scissor.bottom = LONG(height);
 
-    // Clear (UNCHANGED)
+    // Clear
     {
         float clearColor[] = { 0.05f, 0.05f, 0.06f, 1.0f };
 
@@ -527,7 +473,7 @@ void Exercise6Module::render()
                 const Matrix invNoTranslation = computeNormalMatrixSafe(modelM);
 
                 pi.modelMat = modelM.Transpose();
-                pi.normalMat = invNoTranslation.Transpose(); // inverse-transpose uploaded
+                pi.normalMat = invNoTranslation.Transpose();
                 pi.material = mat.getPhongMaterial();
 
                 const size_t instanceOffset = (frameSlot * meshCount + meshIdx) * perInstanceStride;
@@ -537,12 +483,13 @@ void Exercise6Module::render()
                     2, perInstanceBuffer->GetGPUVirtualAddress() + instanceOffset);
             }
 
+            // SRV table: t0 (base colour)
             commandList->SetGraphicsRootDescriptorTable(3, mat.getTexturesTableGPU());
             mesh.draw(commandList);
         }
     }
 
-    // Debug draw (UNCHANGED)
+    // Debug draw
     {
         if (showGrid)
             dd::xzSquareGrid(-50.0f, 50.0f, 0.0f, 1.0f, dd::colors::LightGray);
@@ -591,13 +538,14 @@ bool Exercise6Module::createRootSignature()
     CD3DX12_DESCRIPTOR_RANGE srvRange;
     CD3DX12_DESCRIPTOR_RANGE sampRange;
 
+    // t0 only (BasicMaterial::SLOT_COUNT == 1)
     srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, BasicMaterial::SLOT_COUNT, 0);
     sampRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 1, 0);
 
     rootParameters[0].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_VERTEX);          // b0
     rootParameters[1].InitAsConstantBufferView(1, 0, D3D12_SHADER_VISIBILITY_ALL);             // b1
     rootParameters[2].InitAsConstantBufferView(2, 0, D3D12_SHADER_VISIBILITY_ALL);             // b2
-    rootParameters[3].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_PIXEL);      // t0..t4
+    rootParameters[3].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_PIXEL);      // t0
     rootParameters[4].InitAsDescriptorTable(1, &sampRange, D3D12_SHADER_VISIBILITY_PIXEL);     // s0
 
     CD3DX12_ROOT_SIGNATURE_DESC desc;
