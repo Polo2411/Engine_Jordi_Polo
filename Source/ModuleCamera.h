@@ -74,7 +74,7 @@ private:
     // --- Movement ---
     float moveSpeed = 4.0f;
     float rotateSpeedDeg = 120.0f;
-    float shiftMultiplier = 2.0f; // SHIFT duplicates speed
+    float shiftMultiplier = 2.0f;
     float wheelZoomSpeed = 2.0f;
 
     // --- Mouse ---
@@ -93,6 +93,8 @@ private:
 
     Vector3 orbitPivot = Vector3::Zero;
     float orbitDistance = 10.0f;
+
+    bool wasOrbiting = false;
 
     // --- Key edges ---
     bool prevKeyF = false;

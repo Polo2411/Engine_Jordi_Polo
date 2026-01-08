@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <string>
+#include <cstdint>
 
 #include "MathUtils.h"
 #include "BasicMesh.h"
@@ -36,6 +37,11 @@ public:
 
     const std::string& getSrcFile() const { return srcFile; }
 
+    // Local-space bounds (from glTF POSITION accessors)
+    const Vector3& getLocalBoundsCenter() const { return localBoundsCenter; }
+    float getLocalBoundsRadius() const { return localBoundsRadius; }
+    bool hasLocalBounds() const { return hasBounds; }
+
 private:
     void loadMeshes(const tinygltf::Model& model);
     void loadMaterials(const tinygltf::Model& model, const char* basePath, BasicMaterial::Type materialType);
@@ -54,4 +60,11 @@ private:
 
     mutable bool   dirtyTransform = true;
     mutable Matrix modelMatrix = Matrix::Identity;
+
+    // Local bounds cached on load()
+    bool    hasBounds = false;
+    Vector3 localBoundsMin = Vector3(0.0f, 0.0f, 0.0f);
+    Vector3 localBoundsMax = Vector3(0.0f, 0.0f, 0.0f);
+    Vector3 localBoundsCenter = Vector3(0.0f, 0.0f, 0.0f);
+    float   localBoundsRadius = 1.0f;
 };

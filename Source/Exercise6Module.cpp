@@ -81,6 +81,44 @@ namespace
         for (int i = 0; i < count; ++i) sum += history[i];
         return (count > 0) ? (sum / double(count)) : 0.0;
     }
+
+    Vector3 TransformPoint(const Vector3& p, const Matrix& m)
+    {
+        return Vector3::Transform(p, m);
+    }
+
+    float MaxScaleFromMatrix(const Matrix& m)
+    {
+        // Row-vector convention (SimpleMath). Scale is in the first 3 rows.
+        const Vector3 x(m._11, m._12, m._13);
+        const Vector3 y(m._21, m._22, m._23);
+        const Vector3 z(m._31, m._32, m._33);
+
+        const float sx = x.Length();
+        const float sy = y.Length();
+        const float sz = z.Length();
+
+        return std::max(sx, std::max(sy, sz));
+    }
+
+    // Keep camera pivot on the duck transform (world translation).
+    void UpdateCameraFocusFromModel(ModuleCamera* cam, const Matrix& modelM)
+    {
+        if (!cam) return;
+
+        const Vector3 center(modelM._41, modelM._42, modelM._43);
+
+        // Approx world scale from matrix rows (SimpleMath is row-major).
+        const float sx = Vector3(modelM._11, modelM._12, modelM._13).Length();
+        const float sy = Vector3(modelM._21, modelM._22, modelM._23).Length();
+        const float sz = Vector3(modelM._31, modelM._32, modelM._33).Length();
+        const float maxS = std::max(sx, std::max(sy, sz));
+
+        // Duck size varies per asset; clamp to avoid tiny radius when scaling down.
+        const float radius = std::max(0.25f, 1.0f * maxS);
+
+        cam->setFocusBounds(center, radius);
+    }
 }
 
 // ---------------------------------------------------------
@@ -97,6 +135,9 @@ bool Exercise6Module::init()
 
     if (ok)
     {
+        // Initialize camera focus on the loaded model (duck).
+        UpdateCameraFocusFromModel(app->getCamera(), model.getModelMatrix());
+
         D3D12Module* d3d12 = app->getD3D12Module();
 
         Microsoft::WRL::ComPtr<ID3D12Device4> device4;
@@ -224,6 +265,9 @@ void Exercise6Module::imGuiCommands(const Matrix& view, const Matrix& proj)
     {
         ImGuizmo::RecomposeMatrixFromComponents(translation, rotation, scale, (float*)&objectMatrix);
         model.setModelMatrix(objectMatrix);
+
+        // Keep orbit/focus pivot on the duck.
+        UpdateCameraFocusFromModel(app->getCamera(), objectMatrix);
     }
 
     if (ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen))
@@ -306,7 +350,12 @@ void Exercise6Module::imGuiCommands(const Matrix& view, const Matrix& proj)
     );
 
     if (ImGuizmo::IsUsing())
+    {
         model.setModelMatrix(objectMatrix);
+
+        // Keep orbit/focus pivot on the duck.
+        UpdateCameraFocusFromModel(app->getCamera(), objectMatrix);
+    }
 }
 
 // ---------------------------------------------------------
@@ -339,6 +388,34 @@ void Exercise6Module::render()
     if (ModuleCamera* cam = app->getCamera())
     {
         cam->setAspectRatio((height > 0) ? (float(width) / float(height)) : 1.0f);
+
+        // --- Unity-like pivot/focus: always use model bounds in world space ---
+        const Matrix modelM = model.getModelMatrix();
+
+        // Fallback pivot = model translation
+        Vector3 centerW(modelM._41, modelM._42, modelM._43);
+        float radiusW = 1.0f;
+
+        // If you added bounds to BasicModel (recommended):
+        if (model.hasLocalBounds())
+        {
+            const Vector3 localCenter = model.getLocalBoundsCenter();
+            const float localRadius = model.getLocalBoundsRadius();
+
+            centerW = TransformPoint(localCenter, modelM);
+
+            const float maxS = MaxScaleFromMatrix(modelM);
+            radiusW = std::max(localRadius * maxS, 0.01f);
+        }
+        else
+        {
+            // No bounds available: approximate radius from scale
+            radiusW = std::max(MaxScaleFromMatrix(modelM), 0.01f);
+        }
+
+        cam->setFocusBounds(centerW, radiusW);
+        // -------------------------------------------------------
+
         view = cam->getViewMatrix();
         proj = cam->getProjectionMatrix();
     }

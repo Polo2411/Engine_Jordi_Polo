@@ -6,7 +6,7 @@
 #include "Mouse.h"
 #include "imgui.h"
 
-#include <algorithm> // std::max
+#include <algorithm>
 
 namespace
 {
@@ -20,11 +20,9 @@ bool ModuleCamera::init()
     setHorizontalFov(XM_PIDIV4);
     setPlaneDistances(0.1f, 200.0f);
 
-    // Initial pivot: whatever was set as bounds (defaults to Zero)
     orbitPivot = focusCenter;
     orbitDistance = (position - orbitPivot).Length();
 
-    // Unity-like start: look at pivot and align position with the resulting orientation
     lookAt(orbitPivot);
     position = orbitPivot - front() * orbitDistance;
     viewDirty = true;
@@ -47,7 +45,6 @@ void ModuleCamera::update()
     Keyboard& kb = Keyboard::Get();
     auto ks = kb.GetState();
 
-    // Press F to focus
     if (ks.F && !prevKeyF)
         focus();
     prevKeyF = ks.F;
@@ -66,7 +63,6 @@ void ModuleCamera::update()
 }
 
 // ---------------------------------------------------------
-// While RMB is held: WASD moves, mouse rotates (free look). SHIFT increases speed.
 void ModuleCamera::handleKeyboard(float dt)
 {
     Keyboard& kb = Keyboard::Get();
@@ -95,7 +91,6 @@ void ModuleCamera::handleKeyboard(float dt)
 }
 
 // ---------------------------------------------------------
-// Arrow keys: rotate yaw/pitch
 void ModuleCamera::handleArrowRotation(float dt)
 {
     Keyboard& kb = Keyboard::Get();
@@ -118,7 +113,6 @@ void ModuleCamera::handleArrowRotation(float dt)
 }
 
 // ---------------------------------------------------------
-// Mouse wheel: dolly in/out. Alt+LMB: orbit around pivot. RMB: free look.
 void ModuleCamera::handleMouse(float dt)
 {
     (void)dt;
@@ -126,7 +120,7 @@ void ModuleCamera::handleMouse(float dt)
     Mouse& m = Mouse::Get();
     auto ms = m.GetState();
 
-    // Wheel zoom (dolly along view direction)
+    // Wheel zoom
     if (!hasPrevWheel)
     {
         prevWheel = ms.scrollWheelValue;
@@ -159,14 +153,24 @@ void ModuleCamera::handleMouse(float dt)
     Keyboard& kb = Keyboard::Get();
     auto ks = kb.GetState();
 
-    // Alt + LMB => orbit
+    // Alt + LMB => orbit around focusCenter
     if (ks.LeftAlt && ms.leftButton)
     {
-        applyOrbitPixels(dx, dy);
+        if (!wasOrbiting)
+        {
+            orbitPivot = focusCenter;
+            orbitDistance = (position - orbitPivot).Length();
+            orbitDistance = clampf(orbitDistance, 0.2f, 500.0f);
+            wasOrbiting = true;
+        }
+
+        applyOrbitPixels((float)dx, (float)dy);
         return;
     }
 
-    // RMB => free look (rotation)
+    wasOrbiting = false;
+
+    // RMB => free look
     if (!ms.rightButton)
     {
         wasRightMouseDown = false;
@@ -188,15 +192,15 @@ void ModuleCamera::handleMouse(float dt)
 }
 
 // ---------------------------------------------------------
-// Wheel zoom: dolly forward/back (towards where you're looking)
 void ModuleCamera::applyWheelZoomTicks(float ticks)
 {
+    orbitPivot = focusCenter;
+
     float dist = (position - orbitPivot).Length();
     dist = clampf(dist, 0.2f, 500.0f);
 
     float scale = wheelZoomSpeed * (0.15f * dist + 0.5f);
 
-    // ticks > 0 => zoom in
     position += front() * (ticks * scale);
 
     orbitDistance = (position - orbitPivot).Length();
@@ -206,9 +210,10 @@ void ModuleCamera::applyWheelZoomTicks(float ticks)
 }
 
 // ---------------------------------------------------------
-// Orbit: Alt+LMB
 void ModuleCamera::applyOrbitPixels(float dx, float dy)
 {
+    orbitPivot = focusCenter;
+
     yawRad += XMConvertToRadians(MOUSE_SENS * dx);
     pitchRad += XMConvertToRadians(MOUSE_SENS * dy);
     pitchRad = clampf(pitchRad, -MAX_PITCH, MAX_PITCH);
@@ -229,34 +234,32 @@ void ModuleCamera::setFocusBounds(const Vector3& center, float radius)
 
     orbitPivot = focusCenter;
     orbitDistance = (position - orbitPivot).Length();
+    orbitDistance = clampf(orbitDistance, 0.2f, 500.0f);
 }
 
 // ---------------------------------------------------------
-// Focus camera on bounds (center + radius)
 void ModuleCamera::focus()
 {
     orbitPivot = focusCenter;
 
-    // Distance to frame a sphere of radius focusRadius using vertical FOV
     float r = clampf(focusRadius, 0.01f, 100000.0f);
-    float dist = r / tanf(vFovRad * 0.5f);
+    // Use the limiting FOV (Unity-like framing)
+    const float effectiveFov = std::min(vFovRad, hFovRad);
+    float dist = r / tanf(effectiveFov * 0.5f);
 
-    // Unity-like margin
+    // A bit more margin than before (prevents "too close")
     orbitDistance = clampf(dist * 1.25f, 0.2f, 500.0f);
 
-    // Keep the current viewing direction
+
+    // Keep current viewing direction; if degenerate, use backward.
     Vector3 dir = position - orbitPivot;
     if (dir.LengthSquared() < 1e-8f)
         dir = Vector3(0, 0, 1);
     dir.Normalize();
 
-    // Place camera along that direction at the desired distance
     position = orbitPivot + dir * orbitDistance;
 
-    // Set rotation to look at the pivot
     lookAt(orbitPivot);
-
-    // Re-place using front() to guarantee the pivot is exactly centered
     position = orbitPivot - front() * orbitDistance;
 
     viewDirty = true;
@@ -271,13 +274,16 @@ void ModuleCamera::lookAt(const Vector3& target)
     d.Normalize();
 
     // Convention: base forward vector = (0,0,-1)
-    yawRad = atan2f(d.x, -d.z);
+    // Fix: yaw sign so that front() matches the target direction
+    yawRad = atan2f(-d.x, -d.z);
+
     pitchRad = asinf(clampf(d.y, -1.0f, 1.0f));
     pitchRad = clampf(pitchRad, -MAX_PITCH, MAX_PITCH);
 
     orientation = Quaternion::CreateFromYawPitchRoll(yawRad, pitchRad, 0);
     viewDirty = true;
 }
+
 
 // ---------------------------------------------------------
 Vector3 ModuleCamera::front() const { return Vector3::Transform(Vector3(0, 0, -1), orientation); }
@@ -326,8 +332,13 @@ void ModuleCamera::recalcViewIfNeeded()
 {
     if (!viewDirty) return;
 
-    // View matrix from current position/orientation (roll=0)
-    view = Matrix::CreateLookAt(position, position + front(), up());
+    // Camera world matrix (row-vector convention): World = R * T
+    const Matrix R = Matrix::CreateFromQuaternion(orientation);
+    const Matrix T = Matrix::CreateTranslation(position);
+    const Matrix world = R * T;
+
+    // View = inverse(world)
+    view = world.Invert();
 
     viewDirty = false;
 }
