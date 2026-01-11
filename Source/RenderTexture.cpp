@@ -11,12 +11,7 @@
 
 namespace
 {
-    uint32_t ClampMin1(uint32_t v) { return (v == 0u) ? 1u : v; }
-
-    std::wstring ToWString(const std::string& s)
-    {
-        return std::wstring(s.begin(), s.end());
-    }
+    uint32_t ClampMin1(uint32_t v) { return v == 0u ? 1u : v; }
 }
 
 RenderTexture::RenderTexture(
@@ -37,7 +32,6 @@ RenderTexture::RenderTexture(
 {
     sampleCount = msaa ? 4u : 1u;
 
-    // ImGui::Image expects a non-MSAA Texture2D SRV.
     if (msaa && !autoResolveMSAA)
         autoResolveMSAA = true;
 }
@@ -69,9 +63,9 @@ void RenderTexture::releaseResources()
     textureState = D3D12_RESOURCE_STATE_COMMON;
     resolvedState = D3D12_RESOURCE_STATE_COMMON;
 
-    srvDesc = {};
-    rtvDesc = {};
-    dsvDesc = {};
+    srvDesc.reset();
+    rtvDesc.reset();
+    dsvDesc.reset();
 }
 
 void RenderTexture::resize(uint32_t newWidth, uint32_t newHeight)
@@ -82,7 +76,6 @@ void RenderTexture::resize(uint32_t newWidth, uint32_t newHeight)
     if (width == newWidth && height == newHeight && isValid())
         return;
 
-    // Caller should flush the GPU before resizing.
     width = newWidth;
     height = newHeight;
 
@@ -99,7 +92,6 @@ void RenderTexture::createResources(uint32_t newWidth, uint32_t newHeight)
     if (!resources)
         return;
 
-    // Color render target
     if (texture)
         resources->deferRelease(texture.Get());
 
@@ -107,16 +99,12 @@ void RenderTexture::createResources(uint32_t newWidth, uint32_t newHeight)
         colourFormat,
         size_t(newWidth),
         size_t(newHeight),
-        msaa ? 4u : 1u,
+        sampleCount,
         clearColour,
         name.c_str());
 
     textureState = D3D12_RESOURCE_STATE_COMMON;
 
-    if (texture)
-        texture->SetName(ToWString(name).c_str());
-
-    // Optional resolved target for MSAA
     if (resolved)
         resources->deferRelease(resolved.Get());
 
@@ -135,11 +123,9 @@ void RenderTexture::createResources(uint32_t newWidth, uint32_t newHeight)
             clearColour,
             resolvedName.c_str());
 
-        if (resolved)
-            resolved->SetName(ToWString(resolvedName).c_str());
+        resolvedState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
     }
 
-    // Optional depth
     if (depthTexture)
         resources->deferRelease(depthTexture.Get());
 
@@ -153,39 +139,33 @@ void RenderTexture::createResources(uint32_t newWidth, uint32_t newHeight)
             depthFormat,
             size_t(newWidth),
             size_t(newHeight),
-            msaa ? 4u : 1u,
+            sampleCount,
             clearDepth,
             0,
             depthName.c_str());
-
-        if (depthTexture)
-            depthTexture->SetName(ToWString(depthName).c_str());
     }
 }
 
 void RenderTexture::createDescriptors()
 {
-    if (!app)
+    if (!app || !texture)
         return;
 
-    ModuleShaderDescriptors* shaderDescs = app->getShaderDescriptors();
     ModuleTargetDescriptors* targetDescs = app->getTargetDescriptors();
+    ModuleShaderDescriptors* shaderDescs = app->getShaderDescriptors();
 
-    if (!shaderDescs || !targetDescs || !texture)
+    if (!targetDescs || !shaderDescs)
         return;
 
-    // RTV
     rtvDesc = targetDescs->createRT(texture.Get());
 
-    // SRV (use resolved when MSAA+resolve is enabled)
     srvDesc = shaderDescs->allocTable();
     srvDesc.createTextureSRV((msaa && autoResolveMSAA && resolved) ? resolved.Get() : texture.Get());
 
-    // DSV
     if (depthTexture && depthFormat != DXGI_FORMAT_UNKNOWN)
         dsvDesc = targetDescs->createDS(depthTexture.Get());
     else
-        dsvDesc = {};
+        dsvDesc.reset();
 }
 
 void RenderTexture::transition(
@@ -202,12 +182,22 @@ void RenderTexture::transition(
     current = target;
 }
 
+void RenderTexture::transitionToRTV(ID3D12GraphicsCommandList* cmdList)
+{
+    transition(cmdList, texture.Get(), textureState, D3D12_RESOURCE_STATE_RENDER_TARGET);
+}
+
+void RenderTexture::transitionToSRV(ID3D12GraphicsCommandList* cmdList)
+{
+    transition(cmdList, texture.Get(), textureState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+}
+
 void RenderTexture::beginRender(ID3D12GraphicsCommandList* cmdList)
 {
     if (!cmdList || !isValid())
         return;
 
-    transition(cmdList, texture.Get(), textureState, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    transitionToRTV(cmdList);
     setRenderTargetAndClear(cmdList);
 }
 
@@ -219,7 +209,7 @@ void RenderTexture::endRender(ID3D12GraphicsCommandList* cmdList)
     if (msaa && autoResolveMSAA && resolved)
         resolveMSAA(cmdList);
     else
-        transition(cmdList, texture.Get(), textureState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        transitionToSRV(cmdList);
 }
 
 void RenderTexture::resolveMSAA(ID3D12GraphicsCommandList* cmdList)
@@ -238,12 +228,12 @@ void RenderTexture::resolveMSAA(ID3D12GraphicsCommandList* cmdList)
 
 void RenderTexture::setRenderTargetAndClear(ID3D12GraphicsCommandList* cmdList)
 {
-    if (!cmdList)
+    if (!cmdList || !rtvDesc)
         return;
 
     D3D12_CPU_DESCRIPTOR_HANDLE rtv = rtvDesc.getCPUHandle();
 
-    if (!depthTexture || depthFormat == DXGI_FORMAT_UNKNOWN)
+    if (!depthTexture || depthFormat == DXGI_FORMAT_UNKNOWN || !dsvDesc)
     {
         cmdList->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
         cmdList->ClearRenderTargetView(rtv, reinterpret_cast<const float*>(&clearColour), 0, nullptr);

@@ -11,8 +11,6 @@
 #include "RenderTargetDesc.h"
 #include "DepthStencilDesc.h"
 
-// RenderTexture encapsulates an offscreen color render target (RTV) + optional depth (DSV),
-// and a shader-visible SRV for displaying in ImGui or post-processing.
 class RenderTexture
 {
 public:
@@ -60,6 +58,9 @@ private:
         D3D12_RESOURCE_STATES& current,
         D3D12_RESOURCE_STATES target);
 
+    void transitionToRTV(ID3D12GraphicsCommandList* cmdList);
+    void transitionToSRV(ID3D12GraphicsCommandList* cmdList);
+
     void resolveMSAA(ID3D12GraphicsCommandList* cmdList);
     void setRenderTargetAndClear(ID3D12GraphicsCommandList* cmdList);
 
@@ -79,9 +80,9 @@ private:
     bool autoResolveMSAA = false;
     uint32_t sampleCount = 1;
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> texture;      // Color render target
-    Microsoft::WRL::ComPtr<ID3D12Resource> resolved;     // Single-sample target for resolve + SRV
-    Microsoft::WRL::ComPtr<ID3D12Resource> depthTexture; // Optional depth/stencil
+    Microsoft::WRL::ComPtr<ID3D12Resource> texture;
+    Microsoft::WRL::ComPtr<ID3D12Resource> resolved;
+    Microsoft::WRL::ComPtr<ID3D12Resource> depthTexture;
 
     D3D12_RESOURCE_STATES textureState = D3D12_RESOURCE_STATE_COMMON;
     D3D12_RESOURCE_STATES resolvedState = D3D12_RESOURCE_STATE_COMMON;
