@@ -18,6 +18,7 @@
 #include "ModuleResources.h"
 #include "ModuleCamera.h"
 #include "ModuleShaderDescriptors.h"
+#include "ModuleTargetDescriptors.h" // NEW
 #include "ModuleSamplers.h"
 #include "ModuleRingBuffer.h"
 
@@ -34,6 +35,7 @@ Application::Application(int /*argc*/, wchar_t** /*argv*/, void* hWnd)
     // Rendering helpers (depend on device)
     modules.push_back(resources = new ModuleResources());
     modules.push_back(shaderDescriptors = new ModuleShaderDescriptors());
+    modules.push_back(targetDescriptors = new ModuleTargetDescriptors()); // NEW (RTV/DSV descriptors)
     modules.push_back(samplers = new ModuleSamplers());
     modules.push_back(ringBuffer = new ModuleRingBuffer()); // per-frame dynamic CB allocator
     modules.push_back(camera = new ModuleCamera());
@@ -63,6 +65,7 @@ Application::~Application()
     resources = nullptr;
     camera = nullptr;
     shaderDescriptors = nullptr;
+    targetDescriptors = nullptr; // NEW
     samplers = nullptr;
     ringBuffer = nullptr;
 
@@ -122,7 +125,7 @@ void Application::update()
         // Update
         for (auto& m : modules) m->update();
 
-        // Pre-render: D3D12 first (frame begin + allocator reset)
+        // Pre-render: D3D12 first (frame begin + allocator reset + frame tracking)
         if (d3d12) d3d12->preRender();
         for (auto& m : modules)
             if (m != d3d12) m->preRender();

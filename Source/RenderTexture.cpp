@@ -47,9 +47,9 @@ void RenderTexture::releaseResources()
     {
         if (ModuleResources* resources = app->getResources())
         {
-            if (texture)      resources->deferRelease(texture.Get());
-            if (resolved)     resources->deferRelease(resolved.Get());
-            if (depthTexture) resources->deferRelease(depthTexture.Get());
+            if (texture)      resources->deferRelease(texture);
+            if (resolved)     resources->deferRelease(resolved);
+            if (depthTexture) resources->deferRelease(depthTexture);
         }
     }
 
@@ -93,7 +93,7 @@ void RenderTexture::createResources(uint32_t newWidth, uint32_t newHeight)
         return;
 
     if (texture)
-        resources->deferRelease(texture.Get());
+        resources->deferRelease(texture);
 
     texture = resources->createRenderTarget(
         colourFormat,
@@ -106,7 +106,7 @@ void RenderTexture::createResources(uint32_t newWidth, uint32_t newHeight)
     textureState = D3D12_RESOURCE_STATE_COMMON;
 
     if (resolved)
-        resources->deferRelease(resolved.Get());
+        resources->deferRelease(resolved);
 
     resolved.Reset();
     resolvedState = D3D12_RESOURCE_STATE_COMMON;
@@ -123,11 +123,12 @@ void RenderTexture::createResources(uint32_t newWidth, uint32_t newHeight)
             clearColour,
             resolvedName.c_str());
 
-        resolvedState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        // El estado inicial, según el powerpoint, debe ser COMMON.
+        resolvedState = D3D12_RESOURCE_STATE_COMMON;
     }
 
     if (depthTexture)
-        resources->deferRelease(depthTexture.Get());
+        resources->deferRelease(depthTexture);
 
     depthTexture.Reset();
 
