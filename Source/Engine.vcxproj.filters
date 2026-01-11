@@ -65,6 +65,9 @@
     <ClCompile Include="Exercise7Module.cpp">
       <Filter>ExerciseModules</Filter>
     </ClCompile>
+    <ClCompile Include="Assignment2Module.cpp">
+      <Filter>AssignmentModules</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="3rdParty\imgui-1.89.8\backends\imgui_impl_win32.h" />
@@ -138,6 +141,9 @@
     <ClInclude Include="Exercise7Module.h">
       <Filter>ExerciseModules</Filter>
     </ClInclude>
+    <ClInclude Include="Assignment2Module.h">
+      <Filter>AssignmentModules</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Engine.rc" />
@@ -154,6 +160,9 @@
     </None>
     <None Include="Exercise7.hlsli">
       <Filter>ExerciseModules\Shaders</Filter>
+    </None>
+    <None Include="Assignment2.hlsli">
+      <Filter>AssignmentModules\Shaders</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
@@ -215,6 +224,12 @@
     </FxCompile>
     <FxCompile Include="Exercise7PS.hlsl">
       <Filter>ExerciseModules\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Assignment2PS.hlsl">
+      <Filter>AssignmentModules\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Assignment2VS.hlsl">
+      <Filter>AssignmentModules\Shaders</Filter>
     </FxCompile>
   </ItemGroup>
 </Project>

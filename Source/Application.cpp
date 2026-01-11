@@ -13,6 +13,7 @@
 #include "Exercise6Module.h"
 #include "Exercise7Module.h"
 #include "Assignment1Module.h"
+#include "Assignment2Module.h"
 
 #include "TimeManager.h"
 #include "ModuleResources.h"
@@ -38,7 +39,7 @@ Application::Application(int /*argc*/, wchar_t** /*argv*/, void* hWnd)
     modules.push_back(resources = new ModuleResources());
     modules.push_back(camera = new ModuleCamera());
 
-    modules.push_back(new Exercise7Module());
+    modules.push_back(new Assignment2Module());
 }
 
 Application::~Application()
