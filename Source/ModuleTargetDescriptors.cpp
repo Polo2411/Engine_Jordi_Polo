@@ -47,6 +47,8 @@ bool ModuleTargetDescriptors::init()
         heapDSV->SetName(L"DSV Heap");
     }
 
+    // Keep refCounts intact (do not zero them in cleanUp).
+    // It's fine to initialize them once here.
     rtRefCounts.fill(0);
     dsRefCounts.fill(0);
 
@@ -55,6 +57,10 @@ bool ModuleTargetDescriptors::init()
 
 bool ModuleTargetDescriptors::cleanUp()
 {
+    // IMPORTANT:
+    // Do NOT reset refCounts here. Some RenderTargetDesc/DepthStencilDesc objects
+    // may still be destroyed after cleanUp(), and they need valid counters.
+
     heapRTV.Reset();
     heapDSV.Reset();
 
@@ -62,9 +68,6 @@ bool ModuleTargetDescriptors::cleanUp()
     dsvStart = {};
     rtvInc = 0;
     dsvInc = 0;
-
-    rtRefCounts.fill(0);
-    dsRefCounts.fill(0);
 
     return true;
 }

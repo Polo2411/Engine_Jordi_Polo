@@ -7,8 +7,6 @@
 #include "Application.h"
 #include <algorithm>
 
-// -------------------- ctor / dtor --------------------
-
 D3D12Module::D3D12Module(HWND wnd) : hWnd(wnd)
 {
 }
@@ -17,8 +15,6 @@ D3D12Module::~D3D12Module()
 {
     flush();
 }
-
-// -------------------- init / cleanUp --------------------
 
 bool D3D12Module::init()
 {
@@ -46,10 +42,9 @@ bool D3D12Module::init()
     {
         currentBackBufferIdx = swapChain->GetCurrentBackBufferIndex();
 
-        // Create ImGui renderer backend (DX12 + Win32)
-        imgui = std::make_unique<ImGuiPass>(device.Get(), hWnd);
+        // IMPORTANT: Do NOT create ImGuiPass here anymore.
+        // It depends on ModuleShaderDescriptors being initialized.
 
-        // Frame/fence tracking for backbuffer reuse
         frameIndex = 0;
         lastCompletedFrame = 0;
         for (UINT i = 0; i < kBufferCount; ++i)
@@ -62,6 +57,31 @@ bool D3D12Module::init()
     return ok;
 }
 
+void D3D12Module::initImGui()
+{
+    if (imgui)
+        return;
+
+    if (!device || !hWnd || !app)
+        return;
+
+    ModuleShaderDescriptors* descriptors = app->getShaderDescriptors();
+    if (!descriptors || !descriptors->getHeap())
+        return;
+
+    // Reserve space in the ENGINE heap for ImGui font SRV (like the professor).
+    imguiDescTable = descriptors->allocTable();
+
+    imgui = std::make_unique<ImGuiPass>(
+        device.Get(),
+        hWnd,
+        descriptors->getHeap(),
+        imguiDescTable.getCPUHandle(),
+        imguiDescTable.getGPUHandle()
+    );
+}
+
+
 bool D3D12Module::cleanUp()
 {
     imgui.reset();
@@ -69,66 +89,59 @@ bool D3D12Module::cleanUp()
     if (drawEvent)
         CloseHandle(drawEvent);
     drawEvent = nullptr;
+    imguiDescTable.reset();
 
     return true;
 }
 
-// -------------------- frame: preRender / postRender --------------------
-
 void D3D12Module::preRender()
 {
-    // Skip rendering when minimized or size is invalid
     if (minimized || windowWidth == 0 || windowHeight == 0)
         return;
 
+    // In case initImGui() wasn't possible in Application::init (rare),
+    // try again safely.
+    if (!imgui)
+        initImGui();
+
     currentBackBufferIdx = swapChain->GetCurrentBackBufferIndex();
 
-    // Wait if the current backbuffer is still in use by the GPU
     if (drawFenceValues[currentBackBufferIdx] != 0)
     {
         drawFence->SetEventOnCompletion(drawFenceValues[currentBackBufferIdx], drawEvent);
         WaitForSingleObject(drawEvent, INFINITE);
-
-        // Backbuffer is safe to reuse; update completed-frame tracking
         lastCompletedFrame = std::max(lastCompletedFrame, frameValues[currentBackBufferIdx]);
     }
 
-    // Begin a new CPU frame for this backbuffer
     ++frameIndex;
     frameValues[currentBackBufferIdx] = frameIndex;
 
     commandAllocators[currentBackBufferIdx]->Reset();
 
-    // Start ImGui frame (NewFrame)
     if (imgui)
         imgui->startFrame();
 }
 
 void D3D12Module::postRender()
 {
-    // Skip present when minimized or size is invalid
     if (minimized || windowWidth == 0 || windowHeight == 0)
         return;
 
-    swapChain->Present(0, 0); // vsync OFF
+    swapChain->Present(0, 0);
     signalDrawQueue();
 }
 
 UINT D3D12Module::signalDrawQueue()
 {
-    // Signal a fence value associated with the current backbuffer
     drawFenceValues[currentBackBufferIdx] = ++drawFenceCounter;
     drawCommandQueue->Signal(drawFence.Get(), drawFenceValues[currentBackBufferIdx]);
     return drawFenceCounter;
 }
 
-// -------------------- full sync (for shutdown) --------------------
-
 void D3D12Module::flush()
 {
     if (!drawCommandQueue || !drawFence || !drawEvent) return;
 
-    // Force the GPU to finish all queued work
     drawCommandQueue->Signal(drawFence.Get(), ++drawFenceCounter);
     drawFence->SetEventOnCompletion(drawFenceCounter, drawEvent);
     WaitForSingleObject(drawEvent, INFINITE);
@@ -138,7 +151,6 @@ void D3D12Module::flush()
 
 void D3D12Module::resize()
 {
-    // Do not resize swapchain buffers while minimized
     if (minimized)
         return;
 
@@ -152,7 +164,6 @@ void D3D12Module::resize()
     windowWidth = width;
     windowHeight = height;
 
-    // Ensure GPU is idle before releasing/resizing swapchain resources
     flush();
 
     for (UINT i = 0; i < kBufferCount; ++i)
@@ -189,8 +200,6 @@ void D3D12Module::resize()
         currentBackBufferIdx = swapChain->GetCurrentBackBufferIndex();
 }
 
-// -------------------- creation helpers --------------------
-
 void D3D12Module::enableDebugLayer()
 {
     ComPtr<ID3D12Debug> debugInterface;
@@ -220,7 +229,6 @@ bool D3D12Module::createDevice(bool useWarp)
     }
     else
     {
-        // Pick the high-performance adapter (GPU preference)
         ComPtr<IDXGIAdapter4> adapter;
         factory->EnumAdapterByGpuPreference(
             0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&adapter));
@@ -237,7 +245,6 @@ bool D3D12Module::setupInfoQueue()
     bool ok = SUCCEEDED(device.As(&pInfoQueue));
     if (ok)
     {
-        // Break in the debugger on severe validation messages
         pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
         pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
         pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, TRUE);
@@ -247,7 +254,6 @@ bool D3D12Module::setupInfoQueue()
 
 bool D3D12Module::createDrawCommandQueue()
 {
-    // Main direct queue used for rendering
     D3D12_COMMAND_QUEUE_DESC desc = {};
     desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
     desc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
@@ -284,7 +290,6 @@ bool D3D12Module::createSwapChain()
 
 bool D3D12Module::createRenderTargets()
 {
-    // RTV heap for swapchain backbuffers
     D3D12_DESCRIPTOR_HEAP_DESC desc = {};
     desc.NumDescriptors = kBufferCount;
     desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
@@ -318,7 +323,6 @@ bool D3D12Module::createRenderTargets()
 
 bool D3D12Module::createDepthStencil()
 {
-    // Depth buffer resource + DSV heap
     D3D12_CLEAR_VALUE clearValue = {};
     clearValue.Format = DXGI_FORMAT_D32_FLOAT;
     clearValue.DepthStencil.Depth = 1.0f;
@@ -386,7 +390,6 @@ bool D3D12Module::createCommandList()
 {
     bool ok = true;
 
-    // One allocator per backbuffer (avoids CPU/GPU sync on reuse)
     for (UINT i = 0; ok && i < kBufferCount; ++i)
         ok = SUCCEEDED(device->CreateCommandAllocator(
             D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocators[i])));
@@ -401,7 +404,6 @@ bool D3D12Module::createCommandList()
 
 bool D3D12Module::createDrawFence()
 {
-    // Fence + event used to wait for GPU completion
     bool ok = SUCCEEDED(device->CreateFence(
         0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&drawFence)));
 
@@ -427,7 +429,6 @@ void D3D12Module::bindShaderVisibleHeaps(ID3D12GraphicsCommandList* cmdList)
     if (!cmdList)
         return;
 
-    // Bind shader-visible descriptor heaps used by the root signature
     ID3D12DescriptorHeap* heaps[2] = {};
     UINT count = 0;
 
@@ -441,11 +442,8 @@ void D3D12Module::bindShaderVisibleHeaps(ID3D12GraphicsCommandList* cmdList)
         cmdList->SetDescriptorHeaps(count, heaps);
 }
 
-// -------------------- getters --------------------
-
 D3D12_CPU_DESCRIPTOR_HANDLE D3D12Module::getRenderTargetDescriptor()
 {
-    // RTV handle for the current backbuffer
     return CD3DX12_CPU_DESCRIPTOR_HANDLE(
         rtDescriptorHeap->GetCPUDescriptorHandleForHeapStart(),
         currentBackBufferIdx,
@@ -454,6 +452,5 @@ D3D12_CPU_DESCRIPTOR_HANDLE D3D12Module::getRenderTargetDescriptor()
 
 D3D12_CPU_DESCRIPTOR_HANDLE D3D12Module::getDepthStencilDescriptor()
 {
-    // DSV handle for the depth buffer
     return dsDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
 }

@@ -217,11 +217,11 @@ void Exercise7Module::buildImGuiAndHandleResize(const Matrix& view, const Matrix
         lastSceneH = h;
     }
 
-    if (sceneRT && sceneRT->isValid())
+    if (sceneRT && sceneRT->getSrvTableDesc())
     {
-        D3D12_GPU_DESCRIPTOR_HANDLE handle = sceneRT->getSrvHandle();
-        ImGui::Image((ImTextureID)handle.ptr, size);
+        ImGui::Image((ImTextureID)sceneRT->getSrvHandle().ptr, size);
     }
+
 
     ImGui::End();
 

@@ -1,41 +1,35 @@
 ﻿#pragma once
 
 #include "Module.h"
+#include "ShaderTableDesc.h"
 
 #include <dxgi1_6.h>
 #include <cstdint>
-#include <algorithm> // std::max
+#include <algorithm>
 
 class ImGuiPass;
 
-// Core Direct3D 12 renderer module (device, swapchain, frame sync)
 class D3D12Module : public Module
 {
 public:
-    // Number of swapchain backbuffers
     static constexpr UINT kBufferCount = 2;
 
 public:
     D3D12Module(HWND wnd);
     ~D3D12Module();
 
-    // Module lifecycle
     bool init() override;
     bool cleanUp() override;
 
-    // Per-frame entry points
     void preRender() override;
     void postRender() override;
 
-    // GPU synchronization helpers
     void flush();
     void resize();
 
-    // Minimized window handling
     void setMinimized(bool v) { minimized = v; }
     bool isMinimized() const { return minimized; }
 
-    // --- D3D12 accessors ---
     ID3D12Device* getDevice() { return device.Get(); }
     ID3D12GraphicsCommandList* getCommandList() { return commandList.Get(); }
     ID3D12CommandAllocator* getCommandAllocator() { return commandAllocators[currentBackBufferIdx].Get(); }
@@ -45,30 +39,26 @@ public:
     unsigned getWindowWidth() const { return windowWidth; }
     unsigned getWindowHeight() const { return windowHeight; }
 
-    // Current render target / depth-stencil descriptors
     D3D12_CPU_DESCRIPTOR_HANDLE getRenderTargetDescriptor();
     D3D12_CPU_DESCRIPTOR_HANDLE getDepthStencilDescriptor();
 
     ImGuiPass* getImGuiPass() const { return imgui.get(); }
 
-    // --- Fence / frame sync ---
     UINT signalDrawQueue();
 
-    // Frame indices for deferred resource management
     unsigned getCurrentFrame() const { return frameIndex; }
     unsigned getLastCompletedFrame() const { return lastCompletedFrame; }
 
-    // Needed by RingBuffer to reclaim per-frame allocations safely
     UINT getCurrentBackBufferIndex() const { return currentBackBufferIdx; }
 
-    // Bind shader-visible descriptor heaps (CBV/SRV/UAV + samplers)
     void bindShaderVisibleHeaps(ID3D12GraphicsCommandList* cmdList);
 
+    // NEW: create ImGui after ModuleShaderDescriptors exists
+    void initImGui();
+
 private:
-    // Window size query
     void getWindowSize(unsigned& width, unsigned& height);
 
-    // D3D12 initialization helpers
     void enableDebugLayer();
     bool createFactory();
     bool createDevice(bool useWarp);
@@ -105,7 +95,6 @@ private:
     UINT drawFenceCounter = 0;
     UINT drawFenceValues[kBufferCount] = {};
 
-    // Per-backbuffer frame tracking
     unsigned frameValues[kBufferCount] = {};
     unsigned frameIndex = 0;
     unsigned lastCompletedFrame = 0;
@@ -115,6 +104,7 @@ private:
     unsigned windowWidth = 0;
     unsigned windowHeight = 0;
 
-    // ImGui renderer pass
     std::unique_ptr<ImGuiPass> imgui;
+    ShaderTableDesc imguiDescTable;
+
 };

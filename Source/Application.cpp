@@ -11,14 +11,14 @@
 #include "Exercise4Module.h"
 #include "Exercise5Module.h"
 #include "Exercise6Module.h"
-#include "Exercise7Module.h"       // NEW
+#include "Exercise7Module.h"
 #include "Assignment1Module.h"
 
 #include "TimeManager.h"
 #include "ModuleResources.h"
 #include "ModuleCamera.h"
 #include "ModuleShaderDescriptors.h"
-#include "ModuleTargetDescriptors.h" // NEW
+#include "ModuleTargetDescriptors.h"
 #include "ModuleSamplers.h"
 #include "ModuleRingBuffer.h"
 
@@ -26,17 +26,21 @@ Application::Application(int /*argc*/, wchar_t** /*argv*/, void* hWnd)
 {
     app = this;
 
-    // Core engine modules (order matters)
+    // Core engine modules
     modules.push_back(new ModuleInput((HWND)hWnd));
     modules.push_back(d3d12 = new D3D12Module((HWND)hWnd));
     modules.push_back(timeManager = new TimeManager());
 
-    // Rendering helpers (depend on device)
-    modules.push_back(resources = new ModuleResources());
+    // IMPORTANT:
+    // TargetDescriptors must outlive everything that may allocate RTV/DSV from it.
+    // Put it as early as possible (but AFTER D3D12Module so device exists).
+    modules.push_back(targetDescriptors = new ModuleTargetDescriptors());
+
+    // Rendering helpers (depend on device / descriptor pools)
     modules.push_back(shaderDescriptors = new ModuleShaderDescriptors());
-    modules.push_back(targetDescriptors = new ModuleTargetDescriptors()); // NEW (RTV/DSV)
     modules.push_back(samplers = new ModuleSamplers());
-    modules.push_back(ringBuffer = new ModuleRingBuffer()); // per-frame dynamic CB allocator
+    modules.push_back(ringBuffer = new ModuleRingBuffer());
+    modules.push_back(resources = new ModuleResources());
     modules.push_back(camera = new ModuleCamera());
 
     // Exercises / assignments
@@ -45,8 +49,8 @@ Application::Application(int /*argc*/, wchar_t** /*argv*/, void* hWnd)
     //modules.push_back(new Exercise3Module());
     //modules.push_back(new Exercise4Module());
     //modules.push_back(new Exercise5Module());
-    //modules.push_back(new Exercise6Module());  // COMMENTED
-    modules.push_back(new Exercise7Module());    // NEW
+    //modules.push_back(new Exercise6Module());
+    modules.push_back(new Exercise7Module());
     //modules.push_back(new Assignment1Module());
 }
 
@@ -76,8 +80,13 @@ bool Application::init()
 {
     bool ret = true;
 
+    // 1) Init all modules in order
     for (auto it = modules.begin(); it != modules.end() && ret; ++it)
         ret = (*it)->init();
+
+    // 2) Now that ModuleShaderDescriptors is initialized, init ImGui backend
+    if (ret && d3d12)
+        d3d12->initImGui();
 
     lastTime = std::chrono::steady_clock::now();
     return ret;
@@ -103,18 +112,15 @@ void Application::update()
     if (updating) return;
     updating = true;
 
-    // Frame timing
     auto now = std::chrono::steady_clock::now();
     std::chrono::duration<double> dt = now - lastTime;
     lastTime = now;
 
     elapsedSeconds = dt.count();
 
-    // Clamp big stalls (debugger / alt-tab)
     const double maxFrameS = 0.25;
     if (elapsedSeconds > maxFrameS) elapsedSeconds = maxFrameS;
 
-    // FPS moving average
     tickSum -= tickList[tickIndex];
     tickSum += elapsedSeconds;
     tickList[tickIndex] = elapsedSeconds;
@@ -122,19 +128,15 @@ void Application::update()
 
     if (!paused)
     {
-        // Update
         for (auto& m : modules) m->update();
 
-        // Pre-render: D3D12 first (frame begin + allocator reset + frame tracking)
         if (d3d12) d3d12->preRender();
         for (auto& m : modules)
             if (m != d3d12) m->preRender();
 
-        // Render
         for (auto& m : modules)
             if (m != d3d12) m->render();
 
-        // Post-render: modules then D3D12 present
         for (auto& m : modules)
             if (m != d3d12) m->postRender();
         if (d3d12) d3d12->postRender();

@@ -158,6 +158,11 @@ void RenderTexture::createDescriptors()
     if (!targetDescs || !shaderDescs)
         return;
 
+    // IMPORTANT: avoid descriptor leaks on resize/recreate
+    rtvDesc.reset();
+    dsvDesc.reset();
+    srvDesc.reset();
+
     rtvDesc = targetDescs->createRT(texture.Get());
 
     srvDesc = shaderDescs->allocTable();
@@ -168,6 +173,7 @@ void RenderTexture::createDescriptors()
     else
         dsvDesc.reset();
 }
+
 
 void RenderTexture::transition(
     ID3D12GraphicsCommandList* cmdList,
