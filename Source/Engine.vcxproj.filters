@@ -27,9 +27,6 @@
     <ClCompile Include="Exercise2Module.cpp">
       <Filter>ExerciseModules</Filter>
     </ClCompile>
-    <ClCompile Include="UIModule.cpp">
-      <Filter>UI</Filter>
-    </ClCompile>
     <ClCompile Include="Timer.cpp">
       <Filter>UI</Filter>
     </ClCompile>
@@ -58,6 +55,14 @@
     </ClCompile>
     <ClCompile Include="ModuleRingBuffer.cpp" />
     <ClCompile Include="Exercise6Module.cpp">
+      <Filter>ExerciseModules</Filter>
+    </ClCompile>
+    <ClCompile Include="RenderTexture.cpp" />
+    <ClCompile Include="ModuleTargetDescriptors.cpp" />
+    <ClCompile Include="ShaderTableDesc.cpp" />
+    <ClCompile Include="RenderTargetDesc.cpp" />
+    <ClCompile Include="DepthStencilDesc.cpp" />
+    <ClCompile Include="Exercise7Module.cpp">
       <Filter>ExerciseModules</Filter>
     </ClCompile>
   </ItemGroup>
@@ -99,9 +104,6 @@
     <ClInclude Include="TimeManager.h">
       <Filter>UI</Filter>
     </ClInclude>
-    <ClInclude Include="UIModule.h">
-      <Filter>UI</Filter>
-    </ClInclude>
     <ClInclude Include="Exercise3Module.h">
       <Filter>ExerciseModules</Filter>
     </ClInclude>
@@ -126,6 +128,16 @@
     <ClInclude Include="Exercise6Module.h">
       <Filter>ExerciseModules</Filter>
     </ClInclude>
+    <ClInclude Include="RenderTexture.h" />
+    <ClInclude Include="ModuleTargetDescriptors.h" />
+    <ClInclude Include="ShaderTableDesc.h" />
+    <ClInclude Include="RenderTargetDesc.h" />
+    <ClInclude Include="DepthStencilDesc.h" />
+    <ClInclude Include="HandleManager.h" />
+    <ClInclude Include="DeferredFreeHandleManager.h" />
+    <ClInclude Include="Exercise7Module.h">
+      <Filter>ExerciseModules</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Engine.rc" />
@@ -138,6 +150,9 @@
     <None Include="packages.config" />
     <None Include="SimpleMath.inl" />
     <None Include="Exercise6.hlsli">
+      <Filter>ExerciseModules\Shaders</Filter>
+    </None>
+    <None Include="Exercise7.hlsli">
       <Filter>ExerciseModules\Shaders</Filter>
     </None>
   </ItemGroup>
@@ -193,6 +208,12 @@
       <Filter>ExerciseModules\Shaders</Filter>
     </FxCompile>
     <FxCompile Include="Exercise6VS.hlsl">
+      <Filter>ExerciseModules\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Exercise7VS.hlsl">
+      <Filter>ExerciseModules\Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Exercise7PS.hlsl">
       <Filter>ExerciseModules\Shaders</Filter>
     </FxCompile>
   </ItemGroup>

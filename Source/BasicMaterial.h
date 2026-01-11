@@ -1,96 +1,82 @@
 #pragma once
 
+#include "Globals.h"
+#include "ShaderTableDesc.h"
+
 #include <string>
 #include <array>
-#include <algorithm> // std::clamp
 #include <cstdint>
-
-#include <wrl/client.h>
+#include <wrl.h>
 #include <d3d12.h>
-#include <DirectXMath.h>
 
-namespace tinygltf { class Model; struct Material; }
+using Microsoft::WRL::ComPtr;
 
-using namespace DirectX;
-
-struct BasicMaterialData
-{
-    XMFLOAT4 baseColour = XMFLOAT4(1, 1, 1, 1);
-    BOOL     hasColourTexture = FALSE;
-    UINT     padding[3] = { 0, 0, 0 };
-};
-
-// Phong BRDF (Energy-conserving + Fresnel uses F0 = specularColour)
+// Matches Exercise6.hlsli packing
 struct PhongMaterialData
 {
-    XMFLOAT4 diffuseColour = XMFLOAT4(1, 1, 1, 1);
+    Vector4 diffuseColour = Vector4(1, 1, 1, 1);   // Cd + alpha
+    Vector3 specularColour = Vector3(0.04f, 0.04f, 0.04f); // F0
+    float   shininess = 64.0f;                     // n
 
-    // Fresnel at 0 degrees (F0)
-    XMFLOAT3 specularColour = XMFLOAT3(0.015f, 0.015f, 0.015f);
-
-    float    shininess = 64.0f;
-
-    BOOL     hasDiffuseTex = FALSE;
-    UINT     padding[3] = { 0, 0, 0 };
+    BOOL    hasDiffuseTex = FALSE;                 // 4 bytes
+    float   _pad0[3] = { 0,0,0 };                  // padding to 16-byte
 };
-
 
 class BasicMaterial
 {
 public:
-    enum Type
+    enum MaterialType
     {
-        BASIC = 0,
-        PHONG
+        PHONG = 0,
+        UNKNOWN
     };
 
-    // Only t0 is used in Exercise 6
-    enum TextureSlot
-    {
-        SLOT_BASECOLOUR = 0,
-        SLOT_COUNT = 1
-    };
+    // We currently only bind one texture in the exercises (t0 diffuse)
+    static constexpr uint32_t SLOT_DIFFUSE = 0;
+    static constexpr uint32_t SLOT_COUNT = 1;
 
 public:
     BasicMaterial() = default;
-    ~BasicMaterial() = default;
+    ~BasicMaterial();
 
-    void load(const tinygltf::Model& model, const tinygltf::Material& material, Type materialType, const char* basePath);
+    BasicMaterial(const BasicMaterial&) = default;
+    BasicMaterial& operator=(const BasicMaterial&) = default;
 
-    Type getMaterialType() const { return materialType; }
+    BasicMaterial(BasicMaterial&&) noexcept = default;
+    BasicMaterial& operator=(BasicMaterial&&) noexcept = default;
 
-    const BasicMaterialData& getBasicMaterial() const { _ASSERTE(materialType == BASIC); return materialData.basic; }
-    const PhongMaterialData& getPhongMaterial() const { _ASSERTE(materialType == PHONG); return materialData.phong; }
+    void reset();
 
-    // UI helper (used by Exercise6Module)
-    void setPhongMaterial(const PhongMaterialData& phong);
+    // Metadata
+    void setName(const char* n) { name = (n ? n : "material"); }
+    const std::string& getName() const { return name; }
 
-    const char* getName() const { return name.c_str(); }
+    void setMaterialType(MaterialType t) { type = t; }
+    MaterialType getMaterialType() const { return type; }
 
-    // Descriptor table start handle (t0 contiguous)
-    D3D12_GPU_DESCRIPTOR_HANDLE getTexturesTableGPU() const { return texturesTableGpu; }
+    // Phong
+    const PhongMaterialData& getPhongMaterial() const { return phong; }
+    void setPhongMaterial(const PhongMaterialData& d) { phong = d; }
+
+    // Texture resource management (owned by material)
+    void setDiffuseTexture(ComPtr<ID3D12Resource> tex);
+    ID3D12Resource* getDiffuseTexture() const { return textures[SLOT_DIFFUSE].Get(); }
+
+    // Descriptor table (shader-visible SRVs)
+    void ensureTextureTable();     // alloc if needed
+    void updateDescriptors();      // write SRVs/nulls for current textures
+
+    D3D12_GPU_DESCRIPTOR_HANDLE getTexturesTableGPU() const { return textureTable.getGPUHandle(0); }
+    const ShaderTableDesc& getTexturesTable() const { return textureTable; }
 
 private:
-    static std::wstring toWStringUTF8(const std::string& s);
-    static std::wstring makeTexturePathW(const char* basePath, const std::string& uri);
+    std::string name = "material";
+    MaterialType type = PHONG;
 
-    void initNullTable();
-    bool loadTextureIntoSlot(const tinygltf::Model& model, int textureIndex, const char* basePath, TextureSlot slot);
+    PhongMaterialData phong;
 
-    bool hasTexture(TextureSlot slot) const { return textures[(size_t)slot] != nullptr; }
+    std::array<ComPtr<ID3D12Resource>, SLOT_COUNT> textures{};
 
-private:
-    union
-    {
-        BasicMaterialData basic;
-        PhongMaterialData phong;
-    } materialData = {};
-
-    Type materialType = BASIC;
-
-    std::array<Microsoft::WRL::ComPtr<ID3D12Resource>, SLOT_COUNT> textures;
-    std::string name;
-
-    uint32_t tableStartIndex = UINT32_MAX;
-    D3D12_GPU_DESCRIPTOR_HANDLE texturesTableGpu{ 0 };
+    // One table per material (8 slots available, we use SLOT_COUNT)
+    ShaderTableDesc textureTable;
 };

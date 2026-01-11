@@ -2,137 +2,92 @@
 #include "BasicMaterial.h"
 
 #include "Application.h"
-#include "ModuleResources.h"
 #include "ModuleShaderDescriptors.h"
+#include "ModuleResources.h"
 
-#pragma warning(push)
-#pragma warning(disable : 4018)
-#pragma warning(disable : 4267)
-#include "tiny_gltf.h"
-#pragma warning(pop)
-
-std::wstring BasicMaterial::toWStringUTF8(const std::string& s)
+BasicMaterial::~BasicMaterial()
 {
-    if (s.empty())
-        return {};
-
-    const int sizeNeeded = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-    if (sizeNeeded <= 0)
-        return {};
-
-    std::wstring w;
-    w.resize(sizeNeeded);
-    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), w.data(), sizeNeeded);
-    return w;
+    reset();
 }
 
-std::wstring BasicMaterial::makeTexturePathW(const char* basePath, const std::string& uri)
+void BasicMaterial::reset()
 {
-    std::string base = basePath ? basePath : "";
-    return toWStringUTF8(base + uri);
-}
+    // Release SRV table (deferred by ShaderTableDesc)
+    textureTable.reset();
 
-void BasicMaterial::initNullTable()
-{
-    ModuleShaderDescriptors* descriptors = app->getShaderDescriptors();
-
-    // Allocate a contiguous block for t0
-    tableStartIndex = descriptors->allocateRange(SLOT_COUNT);
-    _ASSERTE(tableStartIndex != UINT32_MAX);
-
-    texturesTableGpu = descriptors->getGPUHandle(tableStartIndex);
-
-    // Fill with null SRV by default
-    for (uint32_t i = 0; i < SLOT_COUNT; ++i)
+    // Release texture resources safely if ModuleResources supports deferred release
+    if (app)
     {
-        descriptors->writeNullTexture2DSRV(tableStartIndex + i);
-        textures[i].Reset();
+        if (ModuleResources* res = app->getResources())
+        {
+            for (auto& t : textures)
+            {
+                if (t)
+                {
+                    // IMPORTANT: pass the ComPtr lvalue, not t.Get()
+                    res->deferRelease(t);
+                    t.Reset();
+                }
+            }
+        }
+        else
+        {
+            for (auto& t : textures)
+                t.Reset();
+        }
     }
-}
-
-bool BasicMaterial::loadTextureIntoSlot(const tinygltf::Model& model, int textureIndex, const char* basePath, TextureSlot slot)
-{
-    if (textureIndex < 0 || textureIndex >= (int)model.textures.size())
-        return false;
-
-    const tinygltf::Texture& tex = model.textures[textureIndex];
-    const int src = tex.source;
-    if (src < 0 || src >= (int)model.images.size())
-        return false;
-
-    const tinygltf::Image& img = model.images[src];
-    if (img.uri.empty())
-        return false;
-
-    ModuleResources* resources = app->getResources();
-    ModuleShaderDescriptors* descriptors = app->getShaderDescriptors();
-
-    const std::wstring pathW = makeTexturePathW(basePath, img.uri);
-    textures[(size_t)slot] = resources->createTextureFromFile(pathW, nullptr);
-    if (!textures[(size_t)slot])
-        return false;
-
-    descriptors->writeSRV(tableStartIndex + (uint32_t)slot, textures[(size_t)slot].Get());
-    return true;
-}
-
-void BasicMaterial::load(const tinygltf::Model& model, const tinygltf::Material& material, Type type, const char* basePath)
-{
-    name = material.name;
-    materialType = type;
-
-    materialData = {};
-    initNullTable();
-
-    Vector4 baseColour = Vector4::One;
-    const auto& pbr = material.pbrMetallicRoughness;
-
-    if (pbr.baseColorFactor.size() == 4)
+    else
     {
-        baseColour = Vector4(
-            float(pbr.baseColorFactor[0]),
-            float(pbr.baseColorFactor[1]),
-            float(pbr.baseColorFactor[2]),
-            float(pbr.baseColorFactor[3]));
+        for (auto& t : textures)
+            t.Reset();
     }
 
-    const bool hasBaseTex = loadTextureIntoSlot(model, pbr.baseColorTexture.index, basePath, SLOT_BASECOLOUR);
-
-    if (materialType == BASIC)
-    {
-        materialData.basic.baseColour = XMFLOAT4(baseColour.x, baseColour.y, baseColour.z, baseColour.w);
-        materialData.basic.hasColourTexture = hasBaseTex ? TRUE : FALSE;
-    }
-    else // PHONG
-    {
-        materialData.phong.diffuseColour = XMFLOAT4(baseColour.x, baseColour.y, baseColour.z, baseColour.w);
-
-        // Professor defaults (Exercise7 baseline)
-        materialData.phong.specularColour = XMFLOAT3(0.015f, 0.015f, 0.015f);
-        materialData.phong.shininess = 64.0f;
-
-        materialData.phong.hasDiffuseTex = hasBaseTex ? TRUE : FALSE;
-    }
-
+    // Reset phong defaults
+    phong = PhongMaterialData{};
+    type = PHONG;
+    name = "material";
 }
 
-void BasicMaterial::setPhongMaterial(const PhongMaterialData& phong)
+void BasicMaterial::setDiffuseTexture(ComPtr<ID3D12Resource> tex)
 {
-    if (materialType != PHONG)
+    textures[SLOT_DIFFUSE] = tex;
+    phong.hasDiffuseTex = (tex != nullptr) ? TRUE : FALSE;
+
+    // Keep descriptors in sync
+    updateDescriptors();
+}
+
+void BasicMaterial::ensureTextureTable()
+{
+    if (textureTable)
         return;
 
-    PhongMaterialData out = phong;
+    if (!app)
+        return;
 
-    // Clamp diffuse in [0..1] is usually handled in UI, but ok to keep.
-    out.specularColour.x = std::clamp(out.specularColour.x, 0.0f, 1.0f);
-    out.specularColour.y = std::clamp(out.specularColour.y, 0.0f, 1.0f);
-    out.specularColour.z = std::clamp(out.specularColour.z, 0.0f, 1.0f);
+    ModuleShaderDescriptors* descs = app->getShaderDescriptors();
+    if (!descs)
+        return;
 
-    out.shininess = (out.shininess < 1.0f) ? 1.0f : out.shininess;
-
-    if (!hasTexture(SLOT_BASECOLOUR))
-        out.hasDiffuseTex = FALSE;
-
-    materialData.phong = out;
+    textureTable = descs->allocTable();
 }
 
+void BasicMaterial::updateDescriptors()
+{
+    ensureTextureTable();
+
+    if (!textureTable)
+        return;
+
+    for (uint32_t slot = 0; slot < SLOT_COUNT; ++slot)
+    {
+        ID3D12Resource* tex = textures[slot].Get();
+
+        if (tex)
+            textureTable.createTextureSRV(tex, (UINT8)slot);
+        else
+            textureTable.createNullTexture2DSRV((UINT8)slot);
+    }
+
+    phong.hasDiffuseTex = (textures[SLOT_DIFFUSE] != nullptr) ? TRUE : FALSE;
+}

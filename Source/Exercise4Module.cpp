@@ -51,7 +51,7 @@ bool Exercise4Module::init()
             d3d12->getDrawCommandQueue()
         );
 
-        // Load texture and create an SRV in the shader-visible heap
+        // Load texture and create an SRV table in the shader-visible heap
         ModuleResources* resources = app->getResources();
         ModuleShaderDescriptors* descriptors = app->getShaderDescriptors();
 
@@ -60,9 +60,12 @@ bool Exercise4Module::init()
         if (!texture)
             return false;
 
-        textureSRV = descriptors->createSRV(texture.Get());
-        if (textureSRV == UINT32_MAX)
+        // NEW API: allocate a table and write SRV into slot 0 (t0)
+        textureTable = descriptors->allocTable();
+        if (!textureTable)
             return false;
+
+        textureTable.createTextureSRV(texture.Get(), 0);
 
         // Optional: focus bounds for camera "F" key
         if (ModuleCamera* cam = app->getCamera())
@@ -86,7 +89,7 @@ bool Exercise4Module::cleanUp()
     pso.Reset();
 
     texture.Reset();
-    textureSRV = UINT32_MAX;
+    textureTable.reset();
 
     debugDrawPass.reset();
 
@@ -184,7 +187,10 @@ void Exercise4Module::render()
 
     // Root bindings: MVP constants + SRV table + sampler table
     commandList->SetGraphicsRoot32BitConstants(0, sizeof(Matrix) / 4, &mvp, 0);
-    commandList->SetGraphicsRootDescriptorTable(1, app->getShaderDescriptors()->getGPUHandle(textureSRV));
+
+    // NEW API: table already points to t0 in slot 0
+    commandList->SetGraphicsRootDescriptorTable(1, textureTable.getGPUHandle(0));
+
     commandList->SetGraphicsRootDescriptorTable(2, app->getSamplers()->getGPUHandle(currentSampler));
 
     commandList->DrawInstanced(6, 1, 0, 0);

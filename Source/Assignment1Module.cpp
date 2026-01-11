@@ -7,13 +7,13 @@
 #include "ModuleResources.h"
 #include "ModuleShaderDescriptors.h"
 #include "ModuleSamplers.h"
+#include "TimeManager.h"
 
 #include "DebugDrawPass.h"
 #include "ImGuiPass.h"
 #include "ReadData.h"
-#include <filesystem>
 
-#include "UIModule.h"
+#include <filesystem>
 
 #include <d3dcompiler.h>
 #include "d3dx12.h"
@@ -27,6 +27,73 @@ struct Vertex
     Vector3 position;
     Vector2 uv;
 };
+
+// ---------------------------------------------------------
+// UI (moved from UIModule)
+// ---------------------------------------------------------
+void Assignment1Module::imGuiCommands()
+{
+    TimeManager* tm = app ? app->getTimeManager() : nullptr;
+
+    ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(360.0f, 0.0f), ImGuiCond_FirstUseEver);
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDocking;
+
+    if (ImGui::Begin("Rendering Settings", nullptr, flags))
+    {
+        // a) FPS
+        if (tm)
+        {
+            ImGui::Text("FPS: %.1f", tm->getFPS());
+            ImGui::Text("Frame Time: %.2f ms", tm->getAvgFrameMs());
+        }
+        else
+        {
+            ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+        }
+
+        ImGui::Separator();
+
+        // b) Options to show/hide the grid and the axis
+        ImGui::Checkbox("Show Grid", &showGrid);
+        ImGui::Checkbox("Show Axis", &showAxis);
+
+        ImGui::Separator();
+
+        // c) Required sampler modes
+        static const char* modes[] =
+        {
+            "Wrap + Bilinear",
+            "Clamp + Bilinear",
+            "Wrap + Point",
+            "Clamp + Point"
+        };
+
+        int mode = 0;
+        switch (currentSampler)
+        {
+        case ModuleSamplers::Type::Linear_Wrap:  mode = 0; break;
+        case ModuleSamplers::Type::Linear_Clamp: mode = 1; break;
+        case ModuleSamplers::Type::Point_Wrap:   mode = 2; break;
+        case ModuleSamplers::Type::Point_Clamp:  mode = 3; break;
+        default: mode = 0; break;
+        }
+
+        if (ImGui::Combo("Texture Sampling", &mode, modes, IM_ARRAYSIZE(modes)))
+        {
+            switch (mode)
+            {
+            case 0: currentSampler = ModuleSamplers::Type::Linear_Wrap;  break;
+            case 1: currentSampler = ModuleSamplers::Type::Linear_Clamp; break;
+            case 2: currentSampler = ModuleSamplers::Type::Point_Wrap;   break;
+            case 3: currentSampler = ModuleSamplers::Type::Point_Clamp;  break;
+            default: currentSampler = ModuleSamplers::Type::Linear_Wrap; break;
+            }
+        }
+    }
+    ImGui::End();
+}
 
 // ---------------------------------------------------------
 // init
@@ -47,13 +114,12 @@ bool Assignment1Module::init()
         if (FAILED(d3d12->getDevice()->QueryInterface(IID_PPV_ARGS(&device4))))
             return false;
 
-        // DebugDraw pass (grid/axes rendering)
         debugDrawPass = std::make_unique<DebugDrawPass>(
             device4.Get(),
             d3d12->getDrawCommandQueue()
         );
 
-        // Load texture and create SRV in the shader descriptor heap
+        // Load texture and create SRV table
         ModuleResources* resources = app->getResources();
         ModuleShaderDescriptors* descriptors = app->getShaderDescriptors();
 
@@ -63,13 +129,9 @@ bool Assignment1Module::init()
         const wchar_t* pathRelease = L"Game/Assets/Textures/WizardCat.jpg";
 
         if (fs::exists(pathRelease))
-        {
             texture = resources->createTextureFromFile(pathRelease, L"WizardCat");
-        }
         else if (fs::exists(pathDebug))
-        {
             texture = resources->createTextureFromFile(pathDebug, L"WizardCat");
-        }
         else
         {
             OutputDebugStringA("ERROR: WizardCat texture not found in any expected path\n");
@@ -79,9 +141,11 @@ bool Assignment1Module::init()
         if (!texture)
             return false;
 
-        textureSRV = descriptors->createSRV(texture.Get());
-        if (textureSRV == UINT32_MAX)
+        textureTable = descriptors->allocTable();
+        if (!textureTable)
             return false;
+
+        textureTable.createTextureSRV(texture.Get(), 0);
 
         // Optional: focus bounds for camera "F" key
         if (ModuleCamera* cam = app->getCamera())
@@ -105,11 +169,15 @@ bool Assignment1Module::cleanUp()
     pso.Reset();
 
     texture.Reset();
-    textureSRV = UINT32_MAX;
+    textureTable.reset();
 
     debugDrawPass.reset();
 
+    // Reset UI state to defaults
+    showGrid = true;
+    showAxis = true;
     currentSampler = ModuleSamplers::Type::Linear_Wrap;
+
     return true;
 }
 
@@ -183,17 +251,6 @@ void Assignment1Module::render()
         D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
         1.0f, 0, 0, nullptr);
 
-    // -------- Read UI state (Assignment window lives in UIModule) --------
-    bool showGrid = true;
-    bool showAxis = true;
-
-    if (UIModule* ui = app->getUIModule())
-    {
-        showGrid = ui->getShowGrid();
-        showAxis = ui->getShowAxis();
-        currentSampler = ui->getSelectedSampler();
-    }
-
     // -------- Draw textured quad --------
     commandList->SetGraphicsRootSignature(rootSignature.Get());
     commandList->RSSetViewports(1, &viewport);
@@ -212,12 +269,12 @@ void Assignment1Module::render()
 
     // Root bindings: MVP constants + SRV table + sampler table
     commandList->SetGraphicsRoot32BitConstants(0, sizeof(Matrix) / 4, &mvp, 0);
-    commandList->SetGraphicsRootDescriptorTable(1, app->getShaderDescriptors()->getGPUHandle(textureSRV));
+    commandList->SetGraphicsRootDescriptorTable(1, textureTable.getGPUHandle(0));
     commandList->SetGraphicsRootDescriptorTable(2, app->getSamplers()->getGPUHandle(currentSampler));
 
     commandList->DrawInstanced(6, 1, 0, 0);
 
-    // -------- DebugDraw (grid + axis) controlled by UI --------
+    // -------- DebugDraw (grid + axis) controlled by this module UI --------
     if (showGrid)
         dd::xzSquareGrid(-50.0f, 50.0f, 0.0f, 1.0f, dd::colors::LightGray);
 
@@ -227,9 +284,10 @@ void Assignment1Module::render()
     if (debugDrawPass)
         debugDrawPass->record(commandList, width, height, view, proj);
 
-    // -------- ImGui: only record draw data here --------
+    // -------- ImGui: build window + record draw data --------
     if (ImGuiPass* uiPass = d3d12->getImGuiPass())
     {
+        imGuiCommands();
         uiPass->record(commandList);
     }
 

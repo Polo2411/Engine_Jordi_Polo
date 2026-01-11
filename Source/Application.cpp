@@ -12,6 +12,7 @@
 #include "Exercise4Module.h"
 #include "Exercise5Module.h"
 #include "Exercise6Module.h"
+#include "Exercise7Module.h"       // NEW
 #include "Assignment1Module.h"
 
 #include "TimeManager.h"
@@ -30,12 +31,11 @@ Application::Application(int /*argc*/, wchar_t** /*argv*/, void* hWnd)
     modules.push_back(new ModuleInput((HWND)hWnd));
     modules.push_back(d3d12 = new D3D12Module((HWND)hWnd));
     modules.push_back(timeManager = new TimeManager());
-    //modules.push_back(ui = new UIModule());
 
     // Rendering helpers (depend on device)
     modules.push_back(resources = new ModuleResources());
     modules.push_back(shaderDescriptors = new ModuleShaderDescriptors());
-    modules.push_back(targetDescriptors = new ModuleTargetDescriptors()); // NEW (RTV/DSV descriptors)
+    modules.push_back(targetDescriptors = new ModuleTargetDescriptors()); // NEW (RTV/DSV)
     modules.push_back(samplers = new ModuleSamplers());
     modules.push_back(ringBuffer = new ModuleRingBuffer()); // per-frame dynamic CB allocator
     modules.push_back(camera = new ModuleCamera());
@@ -46,7 +46,8 @@ Application::Application(int /*argc*/, wchar_t** /*argv*/, void* hWnd)
     //modules.push_back(new Exercise3Module());
     //modules.push_back(new Exercise4Module());
     //modules.push_back(new Exercise5Module());
-    modules.push_back(new Exercise6Module());
+    //modules.push_back(new Exercise6Module());  // COMMENTED
+    modules.push_back(new Exercise7Module());    // NEW
     //modules.push_back(new Assignment1Module());
 }
 
@@ -65,7 +66,7 @@ Application::~Application()
     resources = nullptr;
     camera = nullptr;
     shaderDescriptors = nullptr;
-    targetDescriptors = nullptr; // NEW
+    targetDescriptors = nullptr;
     samplers = nullptr;
     ringBuffer = nullptr;
 

@@ -177,6 +177,8 @@
     <ClInclude Include="D3D12Module.h" />
     <ClInclude Include="DebugDrawPass.h" />
     <ClInclude Include="debug_draw.hpp" />
+    <ClInclude Include="DeferredFreeHandleManager.h" />
+    <ClInclude Include="DepthStencilDesc.h" />
     <ClInclude Include="Engine.h" />
     <ClInclude Include="Exercise1Module.h" />
     <ClInclude Include="Exercise2Module.h" />
@@ -184,10 +186,12 @@
     <ClInclude Include="Exercise4Module.h" />
     <ClInclude Include="Exercise5Module.h" />
     <ClInclude Include="Exercise6Module.h" />
+    <ClInclude Include="Exercise7Module.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="GamePad.h" />
     <ClInclude Include="Globals.h" />
     <ClInclude Include="gltf_utils.h" />
+    <ClInclude Include="HandleManager.h" />
     <ClInclude Include="ImGuiPass.h" />
     <ClInclude Include="Keyboard.h" />
     <ClInclude Include="MathUtils.h" />
@@ -198,9 +202,12 @@
     <ClInclude Include="ModuleRingBuffer.h" />
     <ClInclude Include="ModuleSamplers.h" />
     <ClInclude Include="ModuleShaderDescriptors.h" />
+    <ClInclude Include="ModuleTargetDescriptors.h" />
+    <ClInclude Include="RenderTargetDesc.h" />
+    <ClInclude Include="RenderTexture.h" />
+    <ClInclude Include="ShaderTableDesc.h" />
     <ClInclude Include="TimeManager.h" />
     <ClInclude Include="Timer.h" />
-    <ClInclude Include="UIModule.h" />
     <ClInclude Include="Mouse.h" />
     <ClInclude Include="PlatformHelpers.h" />
     <ClInclude Include="ReadData.h" />
@@ -279,6 +286,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="DepthStencilDesc.cpp" />
     <ClCompile Include="Engine.cpp" />
     <ClCompile Include="Exercise1Module.cpp" />
     <ClCompile Include="Exercise2Module.cpp" />
@@ -286,6 +294,7 @@
     <ClCompile Include="Exercise4Module.cpp" />
     <ClCompile Include="Exercise5Module.cpp" />
     <ClCompile Include="Exercise6Module.cpp" />
+    <ClCompile Include="Exercise7Module.cpp" />
     <ClCompile Include="GamePad.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -307,10 +316,13 @@
     <ClCompile Include="ModuleRingBuffer.cpp" />
     <ClCompile Include="ModuleSamplers.cpp" />
     <ClCompile Include="ModuleShaderDescriptors.cpp" />
+    <ClCompile Include="ModuleTargetDescriptors.cpp" />
+    <ClCompile Include="RenderTargetDesc.cpp" />
+    <ClCompile Include="RenderTexture.cpp" />
+    <ClCompile Include="ShaderTableDesc.cpp" />
     <ClCompile Include="Timer.cpp" />
     <ClCompile Include="TimerManager.cpp" />
     <ClCompile Include="TinyGltfImpl.cpp" />
-    <ClCompile Include="UIModule.cpp" />
     <ClCompile Include="Mouse.cpp" />
     <ClCompile Include="SimpleMath.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
@@ -326,6 +338,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Exercise6.hlsli" />
+    <None Include="Exercise7.hlsli" />
     <None Include="packages.config" />
     <None Include="SimpleMath.inl" />
   </ItemGroup>
@@ -419,6 +432,22 @@
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(TargetDir)%(Filename).cso</ObjectFileOutput>
     </FxCompile>
     <FxCompile Include="Exercise6VS.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.0</ShaderModel>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(TargetDir)%(Filename).cso</ObjectFileOutput>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">6.0</ShaderModel>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(TargetDir)%(Filename).cso</ObjectFileOutput>
+    </FxCompile>
+    <FxCompile Include="Exercise7PS.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.0</ShaderModel>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(TargetDir)%(Filename).cso</ObjectFileOutput>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">6.0</ShaderModel>
+      <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(TargetDir)%(Filename).cso</ObjectFileOutput>
+    </FxCompile>
+    <FxCompile Include="Exercise7VS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">6.0</ShaderModel>
       <ObjectFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(TargetDir)%(Filename).cso</ObjectFileOutput>

@@ -13,7 +13,7 @@ class TimeManager;
 class ModuleResources;
 class ModuleCamera;
 class ModuleShaderDescriptors;
-class ModuleTargetDescriptors;   // NEW
+class ModuleTargetDescriptors;
 class ModuleSamplers;
 class ModuleRingBuffer;
 
@@ -44,7 +44,7 @@ public:
     // Rendering helpers
     ModuleCamera* getCamera() const { return camera; }
     ModuleShaderDescriptors* getShaderDescriptors() const { return shaderDescriptors; }
-    ModuleTargetDescriptors* getTargetDescriptors() const { return targetDescriptors; } // NEW
+    ModuleTargetDescriptors* getTargetDescriptors() const { return targetDescriptors; }
     ModuleSamplers* getSamplers() const { return samplers; }
 
     // Timing
@@ -68,7 +68,7 @@ private:
     ModuleResources* resources = nullptr;
     ModuleCamera* camera = nullptr;
     ModuleShaderDescriptors* shaderDescriptors = nullptr;
-    ModuleTargetDescriptors* targetDescriptors = nullptr; // NEW
+    ModuleTargetDescriptors* targetDescriptors = nullptr;
     ModuleSamplers* samplers = nullptr;
     ModuleRingBuffer* ringBuffer = nullptr;
 

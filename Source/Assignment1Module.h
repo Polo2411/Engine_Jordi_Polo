@@ -1,7 +1,8 @@
 #pragma once
 
 #include "Module.h"
-#include "ModuleSamplers.h"   // para ModuleSamplers::Type
+#include "ModuleSamplers.h"
+#include "ShaderTableDesc.h"
 
 #include <d3d12.h>
 #include <wrl.h>
@@ -25,6 +26,8 @@ private:
     bool createRootSignature();
     bool createPipelineState();
 
+    void imGuiCommands(); // NEW: UI lives here
+
 private:
     // GPU objects
     Microsoft::WRL::ComPtr<ID3D12Resource>       vertexBuffer;
@@ -33,13 +36,17 @@ private:
     Microsoft::WRL::ComPtr<ID3D12RootSignature>  rootSignature;
     Microsoft::WRL::ComPtr<ID3D12PipelineState>  pso;
 
-    // Texture + SRV index
+    // Texture + SRV table
     Microsoft::WRL::ComPtr<ID3D12Resource> texture;
-    uint32_t textureSRV = UINT32_MAX;
+    ShaderTableDesc textureTable;
 
-    // Debug draw pass (grid + axes)
+    // Debug draw pass
     std::unique_ptr<DebugDrawPass> debugDrawPass;
 
-    // Sampler selection (ImGui)
+    // UI state (moved from UIModule)
+    bool showGrid = true;
+    bool showAxis = true;
+
+    // Only 4 options required by the assignment
     ModuleSamplers::Type currentSampler = ModuleSamplers::Type::Linear_Wrap;
 };
