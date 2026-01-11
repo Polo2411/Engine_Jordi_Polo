@@ -5,136 +5,100 @@
 #include "D3D12Module.h"
 #include "d3dx12.h"
 
+ModuleShaderDescriptors::~ModuleShaderDescriptors()
+{
+    handles.forceCollectGarbage();
+    _ASSERTE(handles.getFreeCount() == handles.getSize());
+}
+
 bool ModuleShaderDescriptors::init()
 {
     D3D12Module* d3d12 = app->getD3D12Module();
-    ID3D12Device* device = d3d12->getDevice();
-
-    D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-    desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    desc.NumDescriptors = MAX_DESCRIPTORS;
-    desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-
-    if (FAILED(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&heap))))
+    ID3D12Device* device = d3d12 ? d3d12->getDevice() : nullptr;
+    if (!device)
         return false;
 
-    heap->SetName(L"Shader Descriptor Heap (CBV/SRV/UAV)");
+    D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+    heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    heapDesc.NumDescriptors = NUM_DESCRIPTORS;
+    heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+
+    if (FAILED(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&heap))))
+        return false;
+
+    heap->SetName(L"Shader Descriptor Heap");
 
     descriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
     cpuStart = heap->GetCPUDescriptorHandleForHeapStart();
     gpuStart = heap->GetGPUDescriptorHandleForHeapStart();
 
-    nextFreeIndex = 0;
-
-    // Reserve a null SRV for optional textures
-    nullTexture2DSrvIndex = createNullTexture2DSRV();
-
+    refCounts.fill(0);
     return true;
 }
 
 bool ModuleShaderDescriptors::cleanUp()
 {
+    handles.forceCollectGarbage();
+
     heap.Reset();
-    nextFreeIndex = 0;
-    descriptorSize = 0;
     cpuStart = {};
     gpuStart = {};
-    nullTexture2DSrvIndex = UINT32_MAX;
+    descriptorSize = 0;
+    refCounts.fill(0);
+
     return true;
 }
 
-D3D12_CPU_DESCRIPTOR_HANDLE ModuleShaderDescriptors::getCPUHandle(uint32_t index) const
+void ModuleShaderDescriptors::preRender()
 {
-    return CD3DX12_CPU_DESCRIPTOR_HANDLE(cpuStart, index, descriptorSize);
+    collectGarbage();
 }
 
-D3D12_GPU_DESCRIPTOR_HANDLE ModuleShaderDescriptors::getGPUHandle(uint32_t index) const
+ShaderTableDesc ModuleShaderDescriptors::allocTable()
 {
-    return CD3DX12_GPU_DESCRIPTOR_HANDLE(gpuStart, index, descriptorSize);
+    const uint32_t h = alloc();
+    _ASSERTE(handles.validHandle(h));
+
+    return ShaderTableDesc(h, &refCounts[indexFromHandle(h)]);
 }
 
-uint32_t ModuleShaderDescriptors::allocate()
+void ModuleShaderDescriptors::deferRelease(uint32_t handle)
 {
-    if (nextFreeIndex >= MAX_DESCRIPTORS)
-        return UINT32_MAX;
-
-    return nextFreeIndex++;
-}
-
-uint32_t ModuleShaderDescriptors::allocateRange(uint32_t count)
-{
-    if (count == 0)
-        return UINT32_MAX;
-
-    if (nextFreeIndex + count > MAX_DESCRIPTORS)
-        return UINT32_MAX;
-
-    const uint32_t start = nextFreeIndex;
-    nextFreeIndex += count;
-    return start;
-}
-
-uint32_t ModuleShaderDescriptors::createSRV(ID3D12Resource* texture)
-{
-    if (!texture)
-        return UINT32_MAX;
-
-    uint32_t index = allocate();
-    if (index == UINT32_MAX)
-        return UINT32_MAX;
-
-    writeSRV(index, texture);
-    return index;
-}
-
-void ModuleShaderDescriptors::writeSRV(uint32_t index, ID3D12Resource* texture)
-{
-    ID3D12Device* device = app->getD3D12Module()->getDevice();
-
-    if (!texture)
-    {
-        writeNullTexture2DSRV(index);
+    if (!handle)
         return;
-    }
 
-    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srvDesc.Format = texture->GetDesc().Format;
-    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-    srvDesc.Texture2D.MipLevels = texture->GetDesc().MipLevels;
+    D3D12Module* d3d12 = app->getD3D12Module();
+    _ASSERTE(d3d12);
 
-    device->CreateShaderResourceView(texture, &srvDesc, getCPUHandle(index));
+    handles.deferRelease(handle, d3d12->getCurrentFrame());
 }
 
-uint32_t ModuleShaderDescriptors::createNullTexture2DSRV()
+void ModuleShaderDescriptors::collectGarbage()
 {
-    uint32_t index = allocate();
-    if (index == UINT32_MAX)
-        return UINT32_MAX;
+    D3D12Module* d3d12 = app->getD3D12Module();
+    _ASSERTE(d3d12);
 
-    writeNullTexture2DSRV(index);
-    return index;
+    handles.collectGarbage(d3d12->getLastCompletedFrame());
 }
 
-void ModuleShaderDescriptors::writeNullTexture2DSRV(uint32_t index)
+D3D12_CPU_DESCRIPTOR_HANDLE ModuleShaderDescriptors::getCPUHandle(uint32_t handle, uint8_t slot) const
 {
-    ID3D12Device* device = app->getD3D12Module()->getDevice();
+    _ASSERTE(slot < DESCRIPTORS_PER_TABLE);
+    _ASSERTE(isValid(handle));
 
-    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-    srvDesc.Texture2D.MostDetailedMip = 0;
-    srvDesc.Texture2D.MipLevels = 1;
-    srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
+    const uint32_t tableIndex = indexFromHandle(handle);
+    const uint32_t linearIndex = tableIndex * DESCRIPTORS_PER_TABLE + uint32_t(slot);
 
-    device->CreateShaderResourceView(nullptr, &srvDesc, getCPUHandle(index));
+    return CD3DX12_CPU_DESCRIPTOR_HANDLE(cpuStart, int(linearIndex), int(descriptorSize));
 }
 
-void ModuleShaderDescriptors::reset()
+D3D12_GPU_DESCRIPTOR_HANDLE ModuleShaderDescriptors::getGPUHandle(uint32_t handle, uint8_t slot) const
 {
-    nextFreeIndex = 0;
+    _ASSERTE(slot < DESCRIPTORS_PER_TABLE);
+    _ASSERTE(isValid(handle));
 
-    // Keep null SRV reserved at the start
-    nullTexture2DSrvIndex = createNullTexture2DSRV();
+    const uint32_t tableIndex = indexFromHandle(handle);
+    const uint32_t linearIndex = tableIndex * DESCRIPTORS_PER_TABLE + uint32_t(slot);
+
+    return CD3DX12_GPU_DESCRIPTOR_HANDLE(gpuStart, int(linearIndex), int(descriptorSize));
 }

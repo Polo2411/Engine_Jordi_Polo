@@ -5,6 +5,7 @@
 #include "D3D12Module.h"
 #include "d3dx12.h"
 #include "DirectXTex.h"
+
 #include <vector>
 
 namespace
@@ -21,6 +22,12 @@ namespace
 
         return SUCCEEDED(LoadFromWICFile(filePath.c_str(), WIC_FLAGS_NONE, nullptr, image));
     }
+
+    UINT ClampSampleCount(UINT sc)
+    {
+        if (sc == 0) return 1;
+        return sc;
+    }
 }
 
 ModuleResources::ModuleResources()
@@ -32,9 +39,6 @@ ModuleResources::~ModuleResources()
     cleanUp();
 }
 
-// --------------------------------------------------------------
-// Debug name helpers
-// --------------------------------------------------------------
 std::wstring ModuleResources::utf8ToWString(const char* s)
 {
     if (!s || s[0] == '\0')
@@ -68,12 +72,8 @@ void ModuleResources::setDebugName(ID3D12Object* obj, const char* nameUtf8)
         obj->SetName(w.c_str());
 }
 
-// --------------------------------------------------------------
-// init / cleanUp
-// --------------------------------------------------------------
 bool ModuleResources::init()
 {
-    // Get device and draw queue from D3D12Module
     D3D12Module* d3d = app ? app->getD3D12Module() : nullptr;
     if (!d3d)
         return false;
@@ -84,10 +84,7 @@ bool ModuleResources::init()
     if (!m_device || !m_queue)
         return false;
 
-    // Command allocator + command list used for copy/upload operations
-    HRESULT hr = m_device->CreateCommandAllocator(
-        D3D12_COMMAND_LIST_TYPE_DIRECT,
-        IID_PPV_ARGS(&m_allocator));
+    HRESULT hr = m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_allocator));
     if (FAILED(hr)) return false;
 
     hr = m_device->CreateCommandList(
@@ -98,10 +95,8 @@ bool ModuleResources::init()
         IID_PPV_ARGS(&m_cmdList));
     if (FAILED(hr)) return false;
 
-    // Keep it closed; it will be Reset() before use
     m_cmdList->Close();
 
-    // Fence to sync copy work with the GPU (FlushCopyQueue)
     hr = m_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence));
     if (FAILED(hr)) return false;
 
@@ -110,11 +105,19 @@ bool ModuleResources::init()
     m_fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
     if (!m_fenceEvent) return false;
 
+    deferred.clear();
     return true;
+}
+
+void ModuleResources::preRender()
+{
+    collectGarbage();
 }
 
 bool ModuleResources::cleanUp()
 {
+    deferred.clear();
+
     if (m_fenceEvent)
     {
         CloseHandle(m_fenceEvent);
@@ -130,12 +133,51 @@ bool ModuleResources::cleanUp()
     return true;
 }
 
-// --------------------------------------------------------------
-// UPLOAD BUFFER: CPU-writable (UPLOAD heap)
-// --------------------------------------------------------------
+void ModuleResources::deferRelease(ComPtr<ID3D12Resource>& resource)
+{
+    if (!resource)
+        return;
+
+    D3D12Module* d3d = app ? app->getD3D12Module() : nullptr;
+    if (!d3d)
+    {
+        resource.Reset();
+        return;
+    }
+
+    DeferredResource dr;
+    dr.resource = resource;
+    dr.frame = d3d->getCurrentFrame();
+    deferred.push_back(std::move(dr));
+
+    resource.Reset();
+}
+
+void ModuleResources::collectGarbage()
+{
+    D3D12Module* d3d = app ? app->getD3D12Module() : nullptr;
+    if (!d3d)
+        return;
+
+    const unsigned completed = d3d->getLastCompletedFrame();
+
+    for (size_t i = 0; i < deferred.size();)
+    {
+        if (deferred[i].frame <= completed)
+        {
+            deferred[i] = deferred.back();
+            deferred.pop_back();
+        }
+        else
+        {
+            ++i;
+        }
+    }
+}
+
 ComPtr<ID3D12Resource> ModuleResources::createUploadBuffer(
     const void* cpuData,
-    size_t      dataSize,
+    size_t dataSize,
     const char* debugName)
 {
     const std::wstring w = utf8ToWString(debugName);
@@ -144,7 +186,7 @@ ComPtr<ID3D12Resource> ModuleResources::createUploadBuffer(
 
 ComPtr<ID3D12Resource> ModuleResources::createUploadBuffer(
     const void* cpuData,
-    size_t          dataSize,
+    size_t dataSize,
     const wchar_t* debugNameW)
 {
     if (!m_device)
@@ -152,8 +194,8 @@ ComPtr<ID3D12Resource> ModuleResources::createUploadBuffer(
 
     ComPtr<ID3D12Resource> uploadBuffer;
 
-    CD3DX12_RESOURCE_DESC   desc = CD3DX12_RESOURCE_DESC::Buffer(dataSize);
-    CD3DX12_HEAP_PROPERTIES heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+    CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(dataSize);
+    CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
 
     HRESULT hr = m_device->CreateCommittedResource(
         &heapProps,
@@ -168,25 +210,25 @@ ComPtr<ID3D12Resource> ModuleResources::createUploadBuffer(
 
     setDebugName(uploadBuffer.Get(), debugNameW);
 
-    BYTE* pData = nullptr;
-    CD3DX12_RANGE readRange(0, 0); // CPU will not read from this resource
+    if (cpuData && dataSize > 0)
+    {
+        BYTE* pData = nullptr;
+        CD3DX12_RANGE readRange(0, 0);
 
-    hr = uploadBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pData));
-    if (FAILED(hr))
-        return nullptr;
+        hr = uploadBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pData));
+        if (FAILED(hr))
+            return nullptr;
 
-    memcpy(pData, cpuData, dataSize);
-    uploadBuffer->Unmap(0, nullptr);
+        memcpy(pData, cpuData, dataSize);
+        uploadBuffer->Unmap(0, nullptr);
+    }
 
     return uploadBuffer;
 }
 
-// --------------------------------------------------------------
-// DEFAULT BUFFER: VRAM (uses an UPLOAD staging buffer + CopyResource)
-// --------------------------------------------------------------
 ComPtr<ID3D12Resource> ModuleResources::createDefaultBuffer(
     const void* cpuData,
-    size_t      dataSize,
+    size_t dataSize,
     const char* debugName)
 {
     const std::wstring w = utf8ToWString(debugName);
@@ -195,13 +237,12 @@ ComPtr<ID3D12Resource> ModuleResources::createDefaultBuffer(
 
 ComPtr<ID3D12Resource> ModuleResources::createDefaultBuffer(
     const void* cpuData,
-    size_t          dataSize,
+    size_t dataSize,
     const wchar_t* debugNameW)
 {
-    if (!m_device || !m_queue)
+    if (!m_device || !m_queue || !cpuData || dataSize == 0)
         return nullptr;
 
-    // Name upload and default resources for PIX
     std::wstring uploadName;
     if (debugNameW && debugNameW[0] != L'\0')
     {
@@ -209,7 +250,6 @@ ComPtr<ID3D12Resource> ModuleResources::createDefaultBuffer(
         uploadName += L"_UPLOAD";
     }
 
-    // 1) Create and fill staging buffer (UPLOAD)
     ComPtr<ID3D12Resource> uploadBuffer = createUploadBuffer(
         cpuData,
         dataSize,
@@ -218,10 +258,9 @@ ComPtr<ID3D12Resource> ModuleResources::createDefaultBuffer(
     if (!uploadBuffer)
         return nullptr;
 
-    // 2) Create final buffer in DEFAULT heap
     ComPtr<ID3D12Resource> defaultBuffer;
 
-    CD3DX12_RESOURCE_DESC   bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(dataSize);
+    CD3DX12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(dataSize);
     CD3DX12_HEAP_PROPERTIES defaultHeap(D3D12_HEAP_TYPE_DEFAULT);
 
     HRESULT hr = m_device->CreateCommittedResource(
@@ -237,7 +276,6 @@ ComPtr<ID3D12Resource> ModuleResources::createDefaultBuffer(
 
     setDebugName(defaultBuffer.Get(), debugNameW);
 
-    // 3) Copy UPLOAD -> DEFAULT using the internal command list
     m_allocator->Reset();
     m_cmdList->Reset(m_allocator.Get(), nullptr);
 
@@ -247,15 +285,10 @@ ComPtr<ID3D12Resource> ModuleResources::createDefaultBuffer(
     ID3D12CommandList* lists[] = { m_cmdList.Get() };
     m_queue->ExecuteCommandLists(1, lists);
 
-    // 4) Wait for the copy to finish (so the upload buffer can be released)
     FlushCopyQueue();
-
     return defaultBuffer;
 }
 
-// --------------------------------------------------------------
-// FlushCopyQueue: wait for pending copy work to finish
-// --------------------------------------------------------------
 void ModuleResources::FlushCopyQueue()
 {
     if (!m_queue || !m_fence || !m_fenceEvent)
@@ -271,9 +304,6 @@ void ModuleResources::FlushCopyQueue()
     }
 }
 
-// --------------------------------------------------------------
-// createTextureFromFile: loads texture and generates mipmaps if missing
-// --------------------------------------------------------------
 ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(
     const std::wstring& filePath,
     const wchar_t* debugName)
@@ -287,11 +317,9 @@ ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(
 
     DirectX::TexMetadata meta = image.GetMetadata();
 
-    // If the texture has no mip chain (common for WIC formats), generate mipmaps
     if (meta.mipLevels <= 1)
     {
         DirectX::ScratchImage mipChain;
-
         HRESULT hrMip = DirectX::GenerateMipMaps(
             image.GetImages(),
             image.GetImageCount(),
@@ -306,13 +334,8 @@ ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(
             image = std::move(mipChain);
             meta = image.GetMetadata();
         }
-        else
-        {
-            OutputDebugStringA("ModuleResources: GenerateMipMaps FAILED, continuing without mipmaps\n");
-        }
     }
 
-    // Create final GPU texture in DEFAULT heap (start as COPY_DEST)
     CD3DX12_RESOURCE_DESC texDesc = CD3DX12_RESOURCE_DESC::Tex2D(
         meta.format,
         static_cast<UINT64>(meta.width),
@@ -336,13 +359,11 @@ ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(
     if (FAILED(hr))
         return nullptr;
 
-    // PIX-friendly: if debugName is not provided, use filePath
     if (debugName && debugName[0] != L'\0')
         setDebugName(texture.Get(), debugName);
     else
         setDebugName(texture.Get(), filePath.c_str());
 
-    // Build subresource list: for each array item, for each mip level
     std::vector<D3D12_SUBRESOURCE_DATA> subresources;
     subresources.reserve(image.GetImageCount());
 
@@ -362,7 +383,6 @@ ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(
         }
     }
 
-    // Create staging (UPLOAD) buffer for subresource upload
     const UINT64 uploadSize = GetRequiredIntermediateSize(
         texture.Get(),
         0,
@@ -385,14 +405,12 @@ ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(
     if (FAILED(hr))
         return nullptr;
 
-    // Name staging too (useful in PIX)
     {
         std::wstring stagingName = L"TextureUpload_";
         stagingName += (debugName && debugName[0] != L'\0') ? debugName : filePath.c_str();
         setDebugName(staging.Get(), stagingName.c_str());
     }
 
-    // Record upload + transitions
     m_allocator->Reset();
     m_cmdList->Reset(m_allocator.Get(), nullptr);
 
@@ -405,7 +423,6 @@ ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(
         subresources.data()
     );
 
-    // Transition to shader-readable state
     CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
         texture.Get(),
         D3D12_RESOURCE_STATE_COPY_DEST,
@@ -418,8 +435,105 @@ ComPtr<ID3D12Resource> ModuleResources::createTextureFromFile(
     ID3D12CommandList* lists[] = { m_cmdList.Get() };
     m_queue->ExecuteCommandLists(1, lists);
 
-    // Ensure staging can be safely released after returning
     FlushCopyQueue();
-
     return texture;
+}
+
+ComPtr<ID3D12Resource> ModuleResources::createRenderTarget(
+    DXGI_FORMAT format,
+    size_t width,
+    size_t height,
+    UINT sampleCount,
+    const Vector4& clearColor,
+    const char* debugName)
+{
+    if (!m_device || width == 0 || height == 0)
+        return nullptr;
+
+    sampleCount = ClampSampleCount(sampleCount);
+
+    D3D12_CLEAR_VALUE clear = {};
+    clear.Format = format;
+    clear.Color[0] = clearColor.x;
+    clear.Color[1] = clearColor.y;
+    clear.Color[2] = clearColor.z;
+    clear.Color[3] = clearColor.w;
+
+    CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
+
+    CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(
+        format,
+        static_cast<UINT64>(width),
+        static_cast<UINT>(height),
+        1,
+        1,
+        sampleCount,
+        0,
+        D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
+    );
+
+    ComPtr<ID3D12Resource> tex;
+    HRESULT hr = m_device->CreateCommittedResource(
+        &heapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_COMMON,
+        &clear,
+        IID_PPV_ARGS(&tex)
+    );
+
+    if (FAILED(hr))
+        return nullptr;
+
+    setDebugName(tex.Get(), debugName);
+    return tex;
+}
+
+ComPtr<ID3D12Resource> ModuleResources::createDepthStencil(
+    DXGI_FORMAT format,
+    size_t width,
+    size_t height,
+    UINT sampleCount,
+    float clearDepth,
+    UINT8 clearStencil,
+    const char* debugName)
+{
+    if (!m_device || width == 0 || height == 0)
+        return nullptr;
+
+    sampleCount = ClampSampleCount(sampleCount);
+
+    D3D12_CLEAR_VALUE clear = {};
+    clear.Format = format;
+    clear.DepthStencil.Depth = clearDepth;
+    clear.DepthStencil.Stencil = clearStencil;
+
+    CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
+
+    CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(
+        format,
+        static_cast<UINT64>(width),
+        static_cast<UINT>(height),
+        1,
+        1,
+        sampleCount,
+        0,
+        D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL | D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE
+    );
+
+    ComPtr<ID3D12Resource> tex;
+    HRESULT hr = m_device->CreateCommittedResource(
+        &heapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_DEPTH_WRITE,
+        &clear,
+        IID_PPV_ARGS(&tex)
+    );
+
+    if (FAILED(hr))
+        return nullptr;
+
+    setDebugName(tex.Get(), debugName);
+    return tex;
 }
