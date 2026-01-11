@@ -26,32 +26,19 @@ Application::Application(int /*argc*/, wchar_t** /*argv*/, void* hWnd)
 {
     app = this;
 
-    // Core engine modules
     modules.push_back(new ModuleInput((HWND)hWnd));
     modules.push_back(d3d12 = new D3D12Module((HWND)hWnd));
     modules.push_back(timeManager = new TimeManager());
 
-    // IMPORTANT:
-    // TargetDescriptors must outlive everything that may allocate RTV/DSV from it.
-    // Put it as early as possible (but AFTER D3D12Module so device exists).
     modules.push_back(targetDescriptors = new ModuleTargetDescriptors());
 
-    // Rendering helpers (depend on device / descriptor pools)
     modules.push_back(shaderDescriptors = new ModuleShaderDescriptors());
     modules.push_back(samplers = new ModuleSamplers());
     modules.push_back(ringBuffer = new ModuleRingBuffer());
     modules.push_back(resources = new ModuleResources());
     modules.push_back(camera = new ModuleCamera());
 
-    // Exercises / assignments
-    //modules.push_back(new Exercise1Module());
-    //modules.push_back(new Exercise2Module());
-    //modules.push_back(new Exercise3Module());
-    //modules.push_back(new Exercise4Module());
-    //modules.push_back(new Exercise5Module());
-    //modules.push_back(new Exercise6Module());
     modules.push_back(new Exercise7Module());
-    //modules.push_back(new Assignment1Module());
 }
 
 Application::~Application()
@@ -80,11 +67,9 @@ bool Application::init()
 {
     bool ret = true;
 
-    // 1) Init all modules in order
     for (auto it = modules.begin(); it != modules.end() && ret; ++it)
         ret = (*it)->init();
 
-    // 2) Now that ModuleShaderDescriptors is initialized, init ImGui backend
     if (ret && d3d12)
         d3d12->initImGui();
 
@@ -147,27 +132,16 @@ void Application::update()
 
 bool Application::cleanUp()
 {
-    // Make sure GPU is idle before releasing anything.
     if (d3d12)
         d3d12->flush();
 
-    // CRITICAL FIX:
-    // D3D12Module owns imguiDescTable (ShaderTableDesc). That table must be released
-    // BEFORE ModuleShaderDescriptors is cleaned/destroyed, otherwise the handle remains allocated
-    // and ModuleShaderDescriptors::~ModuleShaderDescriptors() asserts.
+    // CRITICAL: release ImGui shader table while ShaderDescriptors still exist
     if (d3d12)
-        d3d12->cleanUp();
+        d3d12->shutdownImGui();
 
     bool ret = true;
-
-    // Now clean up the rest in reverse order, but SKIP D3D12Module (already cleaned)
     for (auto it = modules.rbegin(); it != modules.rend() && ret; ++it)
-    {
-        if (*it == d3d12)
-            continue;
-
         ret = (*it)->cleanUp();
-    }
 
     return ret;
 }

@@ -27,6 +27,11 @@ namespace fs = std::filesystem;
 
 namespace
 {
+    // Store Scene image rect (screen coords) for ImGuizmo
+    static ImVec2 gSceneImgMin(0.0f, 0.0f);
+    static ImVec2 gSceneImgMax(0.0f, 0.0f);
+    static bool   gSceneImgValid = false;
+
     fs::path GetExeDir()
     {
         wchar_t buf[MAX_PATH]{};
@@ -217,10 +222,20 @@ void Exercise7Module::buildImGuiAndHandleResize(const Matrix& view, const Matrix
         lastSceneH = h;
     }
 
+    gSceneImgValid = false;
+
     if (sceneRT && sceneRT->getSrvTableDesc())
     {
+        // screen-space rect of the image
+        const ImVec2 imgPos = ImGui::GetCursorScreenPos();
+
         ImGui::Image((ImTextureID)sceneRT->getSrvHandle().ptr, size);
+
+        gSceneImgMin = imgPos;
+        gSceneImgMax = ImVec2(imgPos.x + size.x, imgPos.y + size.y);
+        gSceneImgValid = (size.x > 1.0f && size.y > 1.0f);
     }
+
 
 
     ImGui::End();
@@ -351,13 +366,20 @@ void Exercise7Module::imGuiOptionsAndGizmo(const Matrix& view, const Matrix& pro
     if (!showGuizmo)
         return;
 
-    D3D12Module* d3d12 = app->getD3D12Module();
-    const unsigned winW = d3d12->getWindowWidth();
-    const unsigned winH = d3d12->getWindowHeight();
-
     ImGuizmo::SetOrthographic(false);
     ImGuizmo::SetDrawlist(ImGui::GetForegroundDrawList());
-    ImGuizmo::SetRect(0.0f, 0.0f, float(winW), float(winH));
+
+    // IMPORTANT: draw gizmo inside Scene image rect (not full engine window)
+    if (!gSceneImgValid)
+        return;
+
+    const float x = gSceneImgMin.x;
+    const float y = gSceneImgMin.y;
+    const float w = gSceneImgMax.x - gSceneImgMin.x;
+    const float h = gSceneImgMax.y - gSceneImgMin.y;
+
+    ImGuizmo::SetRect(x, y, w, h);
+
 
     ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
     if (gizmoOperation == 1) op = ImGuizmo::ROTATE;

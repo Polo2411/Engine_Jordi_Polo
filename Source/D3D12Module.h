@@ -53,10 +53,9 @@ public:
 
     void bindShaderVisibleHeaps(ID3D12GraphicsCommandList* cmdList);
 
-    // Create ImGui after ModuleShaderDescriptors exists
     void initImGui();
 
-    // NEW: force ImGui to release descriptor table BEFORE ModuleShaderDescriptors is destroyed
+    // IMPORTANT: must be called before ShaderDescriptors are destroyed
     void shutdownImGui();
 
 private:

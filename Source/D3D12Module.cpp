@@ -42,9 +42,6 @@ bool D3D12Module::init()
     {
         currentBackBufferIdx = swapChain->GetCurrentBackBufferIndex();
 
-        // IMPORTANT: Do NOT create ImGuiPass here anymore.
-        // It depends on ModuleShaderDescriptors being initialized.
-
         frameIndex = 0;
         lastCompletedFrame = 0;
         for (UINT i = 0; i < kBufferCount; ++i)
@@ -69,7 +66,6 @@ void D3D12Module::initImGui()
     if (!descriptors || !descriptors->getHeap())
         return;
 
-    // Reserve space in the ENGINE heap for ImGui font SRV.
     imguiDescTable = descriptors->allocTable();
 
     imgui = std::make_unique<ImGuiPass>(
@@ -81,17 +77,16 @@ void D3D12Module::initImGui()
     );
 }
 
-// NEW: called BEFORE ModuleShaderDescriptors is destroyed
 void D3D12Module::shutdownImGui()
 {
-    // Safe to call multiple times
+    // Must run while ModuleShaderDescriptors still exists.
     imgui.reset();
     imguiDescTable.reset();
 }
 
 bool D3D12Module::cleanUp()
 {
-    // IMPORTANT: ensure ImGui releases its descriptor table
+    // Keep safe even if called multiple times
     shutdownImGui();
 
     if (drawEvent)
@@ -106,8 +101,6 @@ void D3D12Module::preRender()
     if (minimized || windowWidth == 0 || windowHeight == 0)
         return;
 
-    // In case initImGui() wasn't possible in Application::init (rare),
-    // try again safely.
     if (!imgui)
         initImGui();
 
