@@ -147,12 +147,27 @@ void Application::update()
 
 bool Application::cleanUp()
 {
+    // Make sure GPU is idle before releasing anything.
     if (d3d12)
         d3d12->flush();
 
+    // CRITICAL FIX:
+    // D3D12Module owns imguiDescTable (ShaderTableDesc). That table must be released
+    // BEFORE ModuleShaderDescriptors is cleaned/destroyed, otherwise the handle remains allocated
+    // and ModuleShaderDescriptors::~ModuleShaderDescriptors() asserts.
+    if (d3d12)
+        d3d12->cleanUp();
+
     bool ret = true;
+
+    // Now clean up the rest in reverse order, but SKIP D3D12Module (already cleaned)
     for (auto it = modules.rbegin(); it != modules.rend() && ret; ++it)
+    {
+        if (*it == d3d12)
+            continue;
+
         ret = (*it)->cleanUp();
+    }
 
     return ret;
 }

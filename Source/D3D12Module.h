@@ -53,8 +53,11 @@ public:
 
     void bindShaderVisibleHeaps(ID3D12GraphicsCommandList* cmdList);
 
-    // NEW: create ImGui after ModuleShaderDescriptors exists
+    // Create ImGui after ModuleShaderDescriptors exists
     void initImGui();
+
+    // NEW: force ImGui to release descriptor table BEFORE ModuleShaderDescriptors is destroyed
+    void shutdownImGui();
 
 private:
     void getWindowSize(unsigned& width, unsigned& height);
@@ -106,5 +109,4 @@ private:
 
     std::unique_ptr<ImGuiPass> imgui;
     ShaderTableDesc imguiDescTable;
-
 };

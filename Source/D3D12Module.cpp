@@ -69,7 +69,7 @@ void D3D12Module::initImGui()
     if (!descriptors || !descriptors->getHeap())
         return;
 
-    // Reserve space in the ENGINE heap for ImGui font SRV (like the professor).
+    // Reserve space in the ENGINE heap for ImGui font SRV.
     imguiDescTable = descriptors->allocTable();
 
     imgui = std::make_unique<ImGuiPass>(
@@ -81,15 +81,22 @@ void D3D12Module::initImGui()
     );
 }
 
+// NEW: called BEFORE ModuleShaderDescriptors is destroyed
+void D3D12Module::shutdownImGui()
+{
+    // Safe to call multiple times
+    imgui.reset();
+    imguiDescTable.reset();
+}
 
 bool D3D12Module::cleanUp()
 {
-    imgui.reset();
+    // IMPORTANT: ensure ImGui releases its descriptor table
+    shutdownImGui();
 
     if (drawEvent)
         CloseHandle(drawEvent);
     drawEvent = nullptr;
-    imguiDescTable.reset();
 
     return true;
 }

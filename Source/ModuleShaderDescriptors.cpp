@@ -38,13 +38,16 @@ bool ModuleShaderDescriptors::init()
 
 bool ModuleShaderDescriptors::cleanUp()
 {
+    // We may still have ShaderTableDesc objects being destroyed AFTER cleanUp(),
+    // so refCounts MUST remain valid. Do NOT reset them here.
     handles.forceCollectGarbage();
 
     heap.Reset();
     cpuStart = {};
     gpuStart = {};
     descriptorSize = 0;
-    refCounts.fill(0);
+
+    // DO NOT do: refCounts.fill(0);
 
     return true;
 }
@@ -67,8 +70,14 @@ void ModuleShaderDescriptors::deferRelease(uint32_t handle)
     if (!handle)
         return;
 
-    D3D12Module* d3d12 = app->getD3D12Module();
-    _ASSERTE(d3d12);
+    // During shutdown, D3D12Module might already be cleaned.
+    // In that case, release immediately (no deferring possible).
+    D3D12Module* d3d12 = app ? app->getD3D12Module() : nullptr;
+    if (!d3d12)
+    {
+        handles.freeHandle(handle);
+        return;
+    }
 
     handles.deferRelease(handle, d3d12->getCurrentFrame());
 }

@@ -63,20 +63,33 @@ ShaderTableDesc& ShaderTableDesc::operator=(ShaderTableDesc&& other) noexcept
 
 ShaderTableDesc::operator bool() const
 {
-    ModuleShaderDescriptors* descriptors = app->getShaderDescriptors();
-    return descriptors && descriptors->isValid(handle);
+    ModuleShaderDescriptors* descriptors = app ? app->getShaderDescriptors() : nullptr;
+    return descriptors && handle != 0 && descriptors->isValid(handle);
 }
 
 void ShaderTableDesc::release()
 {
-    if (refCount && --(*refCount) == 0)
-    {
-        ModuleShaderDescriptors* descriptors = app->getShaderDescriptors();
-        if (descriptors)
-            descriptors->deferRelease(handle);
+    // Always clear local state (this object is being reset/destroyed)
+    const uint32_t h = handle;
+    uint32_t* rc = refCount;
 
-        handle = 0;
-        refCount = nullptr;
+    handle = 0;
+    refCount = nullptr;
+
+    if (!h || !rc)
+        return;
+
+    // Defensive: avoid underflow if something went wrong
+    if (*rc == 0)
+        return;
+
+    // Decrement and release only on last ref
+    --(*rc);
+    if (*rc == 0)
+    {
+        ModuleShaderDescriptors* descriptors = app ? app->getShaderDescriptors() : nullptr;
+        if (descriptors)
+            descriptors->deferRelease(h);
     }
 }
 
