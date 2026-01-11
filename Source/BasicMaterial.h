@@ -1,82 +1,81 @@
+// BasicMaterial.h
 #pragma once
 
 #include "Globals.h"
 #include "ShaderTableDesc.h"
 
-#include <string>
-#include <array>
-#include <cstdint>
-#include <wrl.h>
 #include <d3d12.h>
+#include <wrl.h>
 
-using Microsoft::WRL::ComPtr;
+#include <array>
+#include <string>
+#include <cstdint>
 
-// Matches Exercise6.hlsli packing
-struct PhongMaterialData
-{
-    Vector4 diffuseColour = Vector4(1, 1, 1, 1);   // Cd + alpha
-    Vector3 specularColour = Vector3(0.04f, 0.04f, 0.04f); // F0
-    float   shininess = 64.0f;                     // n
-
-    BOOL    hasDiffuseTex = FALSE;                 // 4 bytes
-    float   _pad0[3] = { 0,0,0 };                  // padding to 16-byte
-};
+namespace tinygltf { class Model; struct Material; }
 
 class BasicMaterial
 {
 public:
-    enum MaterialType
+    // Keep legacy naming used across the project (BasicModel, Exercises, etc.)
+    enum Type : uint32_t
     {
-        PHONG = 0,
-        UNKNOWN
+        BASIC = 0,
+        PHONG = 1
     };
 
-    // We currently only bind one texture in the exercises (t0 diffuse)
-    static constexpr uint32_t SLOT_DIFFUSE = 0;
+    // We currently bind only one SRV: base/diffuse colour
     static constexpr uint32_t SLOT_COUNT = 1;
+
+    // Matches Exercise6/Exercise7 .hlsli layout (16-byte aligned packing)
+    struct PhongMaterialData
+    {
+        Vector4 diffuseColour = Vector4(1.0f, 1.0f, 1.0f, 1.0f); // Cd (rgb) + alpha
+        Vector3 specularColour = Vector3(0.04f, 0.04f, 0.04f);   // F0 (rgb)
+        float   shininess = 64.0f;                               // n
+
+        uint32_t hasDiffuseTex = 0;                              // BOOL-like (4 bytes)
+        Vector3  _pad0 = Vector3::Zero;                          // padding to 16-byte
+    };
 
 public:
     BasicMaterial() = default;
     ~BasicMaterial();
 
-    BasicMaterial(const BasicMaterial&) = default;
-    BasicMaterial& operator=(const BasicMaterial&) = default;
+    BasicMaterial(const BasicMaterial&) = delete;
+    BasicMaterial& operator=(const BasicMaterial&) = delete;
 
     BasicMaterial(BasicMaterial&&) noexcept = default;
     BasicMaterial& operator=(BasicMaterial&&) noexcept = default;
 
-    void reset();
+    void load(const tinygltf::Model& model,
+        const tinygltf::Material& material,
+        Type type,
+        const char* basePath);
 
-    // Metadata
-    void setName(const char* n) { name = (n ? n : "material"); }
+    void releaseResources();
+
     const std::string& getName() const { return name; }
+    Type getMaterialType() const { return materialType; }
 
-    void setMaterialType(MaterialType t) { type = t; }
-    MaterialType getMaterialType() const { return type; }
+    // Phong accessors (used by Exercise6/7 UI)
+    PhongMaterialData getPhongMaterial() const { return phong; }
+    void setPhongMaterial(const PhongMaterialData& p);
 
-    // Phong
-    const PhongMaterialData& getPhongMaterial() const { return phong; }
-    void setPhongMaterial(const PhongMaterialData& d) { phong = d; }
+    // SRV table handle (used by Exercise6/7 root param t0)
+    D3D12_GPU_DESCRIPTOR_HANDLE getTexturesTableGPU() const { return texturesTable.getGPUHandle(); }
 
-    // Texture resource management (owned by material)
-    void setDiffuseTexture(ComPtr<ID3D12Resource> tex);
-    ID3D12Resource* getDiffuseTexture() const { return textures[SLOT_DIFFUSE].Get(); }
-
-    // Descriptor table (shader-visible SRVs)
-    void ensureTextureTable();     // alloc if needed
-    void updateDescriptors();      // write SRVs/nulls for current textures
-
-    D3D12_GPU_DESCRIPTOR_HANDLE getTexturesTableGPU() const { return textureTable.getGPUHandle(0); }
-    const ShaderTableDesc& getTexturesTable() const { return textureTable; }
+private:
+    void rebuildDescriptorTable();
+    void enforceTextureFlags();
 
 private:
     std::string name = "material";
-    MaterialType type = PHONG;
+    Type materialType = PHONG;
 
-    PhongMaterialData phong;
+    // Slot 0 = diffuse/baseColor
+    std::array<Microsoft::WRL::ComPtr<ID3D12Resource>, SLOT_COUNT> textures = {};
 
-    std::array<ComPtr<ID3D12Resource>, SLOT_COUNT> textures{};
+    ShaderTableDesc texturesTable; // allocated from ModuleShaderDescriptors
 
-    // One table per material (8 slots available, we use SLOT_COUNT)
-    ShaderTableDesc textureTable;
+    PhongMaterialData phong = {};
 };

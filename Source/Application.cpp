@@ -4,7 +4,6 @@
 
 #include "ModuleInput.h"
 #include "D3D12Module.h"
-#include "UIModule.h"
 
 #include "Exercise1Module.h"
 #include "Exercise2Module.h"

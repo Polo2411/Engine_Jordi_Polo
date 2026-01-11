@@ -266,11 +266,11 @@ void Exercise6Module::imGuiCommands(const Matrix& view, const Matrix& proj)
             continue;
 
         char header[256]{};
-        _snprintf_s(header, 255, "Material %s", mat.getName());
+        _snprintf_s(header, _countof(header), _TRUNCATE, "Material %s", mat.getName().c_str());
 
         if (ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen))
         {
-            PhongMaterialData ph = mat.getPhongMaterial();
+            BasicMaterial::PhongMaterialData ph = mat.getPhongMaterial();
             bool dirty = false;
 
             // Diffuse
@@ -278,10 +278,10 @@ void Exercise6Module::imGuiCommands(const Matrix& view, const Matrix& proj)
             dirty |= ImGui::IsItemDeactivatedAfterEdit();
 
             // Use Texture (must be BEFORE specular, like your screenshot)
-            bool useTex = (ph.hasDiffuseTex != FALSE);
+            bool useTex = (ph.hasDiffuseTex != 0u);
             if (ImGui::Checkbox("Use Texture", &useTex))
             {
-                ph.hasDiffuseTex = useTex ? TRUE : FALSE;
+                ph.hasDiffuseTex = useTex ? 1u : 0u;
                 dirty = true;
             }
 

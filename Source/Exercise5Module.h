@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Module.h"
 #include "ModuleSamplers.h"
@@ -10,6 +10,7 @@
 #include <cstdint>
 
 #include "BasicModel.h"
+#include "BasicMaterial.h" // ✅ add (explicit)
 
 class DebugDrawPass;
 
@@ -38,9 +39,6 @@ private:
 
     BasicModel model;
 
-    // ---------------------------------------------------------
-    // Per-frame/per-draw transforms (b0)
-    // ---------------------------------------------------------
     struct TransformsCBData
     {
         Matrix mvp;
@@ -50,9 +48,6 @@ private:
     uint8_t* transformsMapped = nullptr;
     size_t transformsCBSize = 0;
 
-    // ---------------------------------------------------------
-    // Material data (b1)
-    // ---------------------------------------------------------
     struct MaterialCBData
     {
         XMFLOAT4 colour;
@@ -64,12 +59,10 @@ private:
 
     std::unique_ptr<DebugDrawPass> debugDrawPass;
 
-    // UI toggles (as in screenshot)
     bool showAxis = false;
     bool showGrid = true;
     bool showGuizmo = true;
 
-    // Gizmo mode: 0=Translate, 1=Rotate, 2=Scale
     int gizmoOperation = 0;
 
     ModuleSamplers::Type currentSampler = ModuleSamplers::Type::Linear_Wrap;

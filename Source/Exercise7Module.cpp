@@ -1,3 +1,4 @@
+// Exercise7Module.cpp
 #include "Globals.h"
 #include "Exercise7Module.h"
 
@@ -116,7 +117,6 @@ bool Exercise7Module::init()
 
         debugDrawPass = std::make_unique<DebugDrawPass>(device4.Get(), d3d12->getDrawCommandQueue());
 
-        // Create Scene RenderTexture (start at 1x1; real size comes from ImGui window)
         const Vector4 clearCol(0.05f, 0.05f, 0.06f, 1.0f);
         sceneRT = std::make_unique<RenderTexture>(
             "SceneRT",
@@ -127,6 +127,7 @@ bool Exercise7Module::init()
             false,
             false
         );
+
         sceneRT->resize(1, 1);
         lastSceneW = 1;
         lastSceneH = 1;
@@ -191,27 +192,22 @@ Matrix Exercise7Module::computeNormalMatrixSafe(const Matrix& modelM)
 }
 
 // ---------------------------------------------------------
-// Step 1 (PowerPoint): Execute ImGui Commands + detect resize + show texture
+// Step 1: ImGui + resize scene RT
 // ---------------------------------------------------------
 void Exercise7Module::buildImGuiAndHandleResize(const Matrix& view, const Matrix& proj, uint32_t& outSceneW, uint32_t& outSceneH)
 {
-    // Scene window (left): show RenderTexture
     ImGui::SetNextWindowSize(ImVec2(900.0f, 650.0f), ImGuiCond_FirstUseEver);
     ImGui::Begin("Scene");
 
-    // Content region size (PowerPoint style)
     const ImVec2 crMin = ImGui::GetWindowContentRegionMin();
     const ImVec2 crMax = ImGui::GetWindowContentRegionMax();
     ImVec2 size = ImVec2(crMax.x - crMin.x, crMax.y - crMin.y);
 
-    // Prevent 0-sized RTs
-    const uint32_t w = ClampMin1((uint32_t)(size.x > 1.0f ? size.x : 1.0f));
-    const uint32_t h = ClampMin1((uint32_t)(size.y > 1.0f ? size.y : 1.0f));
+    const uint32_t w = ClampMin1((uint32_t)((size.x > 1.0f) ? size.x : 1.0f));
+    const uint32_t h = ClampMin1((uint32_t)((size.y > 1.0f) ? size.y : 1.0f));
 
-    // Resize flow (PowerPoint): [ImGui Size Change] -> [Flush GPU] -> [Recreate Textures] -> [Update Descriptors]
     if (sceneRT && (w != lastSceneW || h != lastSceneH))
     {
-        // Critical Warning: Never release resources while GPU might be using them -> flush
         if (D3D12Module* d3d12 = app->getD3D12Module())
             d3d12->flush();
 
@@ -221,7 +217,6 @@ void Exercise7Module::buildImGuiAndHandleResize(const Matrix& view, const Matrix
         lastSceneH = h;
     }
 
-    // Display the texture in ImGui
     if (sceneRT && sceneRT->isValid())
     {
         D3D12_GPU_DESCRIPTOR_HANDLE handle = sceneRT->getSrvHandle();
@@ -230,7 +225,6 @@ void Exercise7Module::buildImGuiAndHandleResize(const Matrix& view, const Matrix
 
     ImGui::End();
 
-    // Right window: options + gizmo
     imGuiOptionsAndGizmo(view, proj);
 
     outSceneW = lastSceneW;
@@ -238,7 +232,7 @@ void Exercise7Module::buildImGuiAndHandleResize(const Matrix& view, const Matrix
 }
 
 // ---------------------------------------------------------
-// Options window (same look as Exercise6 screenshot) + ImGuizmo overlay
+// Options + Gizmo
 // ---------------------------------------------------------
 void Exercise7Module::imGuiOptionsAndGizmo(const Matrix& view, const Matrix& proj)
 {
@@ -320,28 +314,32 @@ void Exercise7Module::imGuiOptionsAndGizmo(const Matrix& view, const Matrix& pro
             continue;
 
         char header[256]{};
-        _snprintf_s(header, 255, "Material %s", mat.getName());
+        _snprintf_s(header, _countof(header), _TRUNCATE, "Material %s", mat.getName().c_str());
 
         if (ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen))
         {
-            PhongMaterialData ph = mat.getPhongMaterial();
+            // TU TIPO REAL ES BasicMaterial::PhongMaterialData (anidado)
+            BasicMaterial::PhongMaterialData ph = mat.getPhongMaterial();
             bool dirty = false;
 
-            dirty |= ImGui::ColorEdit3("Diffuse Colour (Cd)", reinterpret_cast<float*>(&ph.diffuseColour), ImGuiColorEditFlags_NoAlpha);
-            dirty |= ImGui::IsItemDeactivatedAfterEdit();
+            // Diffuse (Cd)
+            dirty |= ImGui::ColorEdit3("Diffuse Colour (Cd)",
+                reinterpret_cast<float*>(&ph.diffuseColour),
+                ImGuiColorEditFlags_NoAlpha);
 
-            bool useTex = (ph.hasDiffuseTex != FALSE);
-            if (ImGui::Checkbox("Use Texture", &useTex))
-            {
-                ph.hasDiffuseTex = useTex ? TRUE : FALSE;
-                dirty = true;
-            }
-
-            dirty |= ImGui::ColorEdit3("Specular Colour (F0)", reinterpret_cast<float*>(&ph.specularColour), ImGuiColorEditFlags_NoAlpha);
-            dirty |= ImGui::IsItemDeactivatedAfterEdit();
+            // Specular (F0)
+            dirty |= ImGui::ColorEdit3("Specular Colour (F0)",
+                reinterpret_cast<float*>(&ph.specularColour),
+                ImGuiColorEditFlags_NoAlpha);
 
             dirty |= ImGui::DragFloat("Shininess (n)", &ph.shininess, 1.0f, 1.0f, 2048.0f);
-            dirty |= ImGui::IsItemDeactivatedAfterEdit();
+
+            bool useTex = (ph.hasDiffuseTex != 0u);
+            if (ImGui::Checkbox("Use Texture", &useTex))
+            {
+                ph.hasDiffuseTex = useTex ? 1u : 0u;
+                dirty = true;
+            }
 
             if (dirty)
                 mat.setPhongMaterial(ph);
@@ -365,8 +363,6 @@ void Exercise7Module::imGuiOptionsAndGizmo(const Matrix& view, const Matrix& pro
     if (gizmoOperation == 1) op = ImGuizmo::ROTATE;
     if (gizmoOperation == 2) op = ImGuizmo::SCALE;
 
-    Matrix objectMatrix = model.getModelMatrix();
-
     ImGuizmo::Manipulate(
         (const float*)&view,
         (const float*)&proj,
@@ -383,7 +379,7 @@ void Exercise7Module::imGuiOptionsAndGizmo(const Matrix& view, const Matrix& pro
 }
 
 // ---------------------------------------------------------
-// render (PowerPoint 5 steps)
+// render
 // ---------------------------------------------------------
 void Exercise7Module::render()
 {
@@ -395,20 +391,15 @@ void Exercise7Module::render()
     if (!commandList)
         return;
 
-    // Compute view/proj based on the Scene render texture size (ImGui window size)
-    // We will fill these after Step 1, but we need valid defaults.
     Matrix view = Matrix::Identity;
     Matrix proj = Matrix::Identity;
 
-    // Begin ImGuizmo frame once per frame (CPU)
     ImGuizmo::BeginFrame();
 
-    // Step 1: Execute ImGui Commands (CPU) + detect scene window size + resize render texture if needed
     uint32_t sceneW = lastSceneW;
     uint32_t sceneH = lastSceneH;
 
     {
-        // Camera matrices should match Scene texture aspect
         if (ModuleCamera* cam = app->getCamera())
         {
             cam->setAspectRatio((sceneH > 0) ? (float(sceneW) / float(sceneH)) : 1.0f);
@@ -426,7 +417,6 @@ void Exercise7Module::render()
 
         buildImGuiAndHandleResize(view, proj, sceneW, sceneH);
 
-        // Recompute matrices after a possible resize (aspect can change)
         if (ModuleCamera* cam = app->getCamera())
         {
             cam->setAspectRatio((sceneH > 0) ? (float(sceneW) / float(sceneH)) : 1.0f);
@@ -435,15 +425,13 @@ void Exercise7Module::render()
         }
     }
 
-    // Step 2: Reset Command List to start recording state
     commandList->Reset(d3d12->getCommandAllocator(), pso.Get());
 
     BEGIN_EVENT(commandList, "Exercise7 Frame");
 
-    // Frame slot for ringed CBs
     const uint32_t frameSlot = (d3d12->getCurrentFrame() % kFramesInFlight);
 
-    // Update CBs (same as Exercise6)
+    // Update CBs
     {
         const Matrix mvp = (model.getModelMatrix() * view * proj).Transpose();
         if (mvpMapped)
@@ -470,10 +458,8 @@ void Exercise7Module::render()
         }
     }
 
-    // Common pipeline state
     commandList->SetGraphicsRootSignature(rootSignature.Get());
 
-    // Bind shader visible heaps (CBV/SRV/UAV + Samplers)
     ID3D12DescriptorHeap* heaps[] =
     {
         app->getShaderDescriptors()->getHeap(),
@@ -492,14 +478,12 @@ void Exercise7Module::render()
     commandList->SetGraphicsRootDescriptorTable(
         4, app->getSamplers()->getGPUHandle(currentSampler));
 
-    // Step 3: Scene Render Pass (Render to Texture + Depth) + DebugDraw
+    // Scene pass
     {
         BEGIN_EVENT(commandList, "Scene Pass -> RenderTexture");
 
-        // Critical: transition SRV -> RTV and bind RT+DS (RenderTexture handles this)
         sceneRT->beginRender(commandList);
 
-        // Draw model
         const auto& meshes = model.getMeshes();
         const auto& mats = model.getMaterials();
         const size_t meshCount = std::max<size_t>(1, meshes.size());
@@ -532,11 +516,14 @@ void Exercise7Module::render()
                     2, perInstanceBuffer->GetGPUVirtualAddress() + instanceOffset);
             }
 
-            commandList->SetGraphicsRootDescriptorTable(3, mat.getTexturesTableGPU());
+            // TU BasicMaterial NO TIENE getTexturesTableDesc(): usa el handle GPU directo
+            commandList->SetGraphicsRootDescriptorTable(
+                3, mat.getTexturesTableGPU());
+
             mesh.draw(commandList);
         }
 
-        // Debug draw in the SAME render target texture (as pwp says)
+        // Debug draw
         {
             if (showGrid)
                 dd::xzSquareGrid(-50.0f, 50.0f, 0.0f, 1.0f, dd::colors::LightGray);
@@ -548,17 +535,15 @@ void Exercise7Module::render()
                 debugDrawPass->record(commandList, sceneW, sceneH, view, proj);
         }
 
-        // Critical: transition RTV -> SRV (RenderTexture handles this)
         sceneRT->endRender(commandList);
 
         END_EVENT(commandList);
     }
 
-    // Step 4: ImGui Render Pass (Backbuffer + Fullscreen Depth)
+    // ImGui pass
     {
         BEGIN_EVENT(commandList, "ImGui Pass -> Backbuffer");
 
-        // Backbuffer PRESENT -> RENDER_TARGET
         {
             CD3DX12_RESOURCE_BARRIER barrier =
                 CD3DX12_RESOURCE_BARRIER::Transition(
@@ -571,30 +556,25 @@ void Exercise7Module::render()
         const unsigned winW = d3d12->getWindowWidth();
         const unsigned winH = d3d12->getWindowHeight();
 
-        // Viewport/scissor MUST be window size (not ImGui size) as per pwp
         D3D12_VIEWPORT vp{ 0.0f, 0.0f, float(winW), float(winH), 0.0f, 1.0f };
         D3D12_RECT sc{ 0, 0, LONG(winW), LONG(winH) };
         commandList->RSSetViewports(1, &vp);
         commandList->RSSetScissorRects(1, &sc);
 
-        // Bind backbuffer + depth
         D3D12_CPU_DESCRIPTOR_HANDLE rtv = d3d12->getRenderTargetDescriptor();
         D3D12_CPU_DESCRIPTOR_HANDLE dsv = d3d12->getDepthStencilDescriptor();
 
         commandList->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
 
-        // Optional clear (keeps a clean background)
         {
             float clearColor[] = { 0.05f, 0.05f, 0.06f, 1.0f };
             commandList->ClearRenderTargetView(rtv, clearColor, 0, nullptr);
             commandList->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
         }
 
-        // Record ImGui draw data
         if (ImGuiPass* ui = d3d12->getImGuiPass())
             ui->record(commandList);
 
-        // Backbuffer RENDER_TARGET -> PRESENT
         {
             CD3DX12_RESOURCE_BARRIER barrier =
                 CD3DX12_RESOURCE_BARRIER::Transition(
@@ -609,7 +589,6 @@ void Exercise7Module::render()
 
     END_EVENT(commandList);
 
-    // Step 5: Execute command list & present (present happens in D3D12Module::postRender)
     if (SUCCEEDED(commandList->Close()))
     {
         ID3D12CommandList* lists[] = { commandList };
@@ -618,22 +597,23 @@ void Exercise7Module::render()
 }
 
 // ---------------------------------------------------------
-// createRootSignature (same as Exercise6)
+// createRootSignature
 // ---------------------------------------------------------
 bool Exercise7Module::createRootSignature()
 {
+    // TU BasicMaterial::SLOT_COUNT = 1 (t0)
     CD3DX12_ROOT_PARAMETER rootParameters[5] = {};
     CD3DX12_DESCRIPTOR_RANGE srvRange;
     CD3DX12_DESCRIPTOR_RANGE sampRange;
 
     srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, BasicMaterial::SLOT_COUNT, 0); // t0
-    sampRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 1, 0);                   // s0
+    sampRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 1, 0);                    // s0
 
-    rootParameters[0].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_VERTEX);     // b0
-    rootParameters[1].InitAsConstantBufferView(1, 0, D3D12_SHADER_VISIBILITY_ALL);        // b1
-    rootParameters[2].InitAsConstantBufferView(2, 0, D3D12_SHADER_VISIBILITY_ALL);        // b2
-    rootParameters[3].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_PIXEL); // t0
-    rootParameters[4].InitAsDescriptorTable(1, &sampRange, D3D12_SHADER_VISIBILITY_PIXEL);// s0
+    rootParameters[0].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_VERTEX);      // b0
+    rootParameters[1].InitAsConstantBufferView(1, 0, D3D12_SHADER_VISIBILITY_ALL);         // b1
+    rootParameters[2].InitAsConstantBufferView(2, 0, D3D12_SHADER_VISIBILITY_ALL);         // b2
+    rootParameters[3].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_PIXEL);  // t0
+    rootParameters[4].InitAsDescriptorTable(1, &sampRange, D3D12_SHADER_VISIBILITY_PIXEL); // s0
 
     CD3DX12_ROOT_SIGNATURE_DESC desc;
     desc.Init(
@@ -664,7 +644,7 @@ bool Exercise7Module::createRootSignature()
 }
 
 // ---------------------------------------------------------
-// createPipelineState (Exercise7VS/PS)
+// createPipelineState
 // ---------------------------------------------------------
 bool Exercise7Module::createPipelineState()
 {
@@ -678,7 +658,6 @@ bool Exercise7Module::createPipelineState()
     psoDesc.PS = { ps.data(), ps.size() };
     psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
-    // RenderTexture colour + depth formats
     psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
     psoDesc.NumRenderTargets = 1;
     psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
@@ -703,7 +682,7 @@ bool Exercise7Module::createPipelineState()
 }
 
 // ---------------------------------------------------------
-// createFrameBuffers (same as Exercise6)
+// createFrameBuffers
 // ---------------------------------------------------------
 bool Exercise7Module::createFrameBuffers()
 {
@@ -763,7 +742,7 @@ bool Exercise7Module::createFrameBuffers()
 }
 
 // ---------------------------------------------------------
-// loadModel (same search as Exercise6)
+// loadModel
 // ---------------------------------------------------------
 bool Exercise7Module::loadModel()
 {

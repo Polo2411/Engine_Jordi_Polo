@@ -574,7 +574,7 @@ bool Exercise5Module::loadModel()
     const std::string gltfPath = ToGenericString(absGltf);
     const std::string basePath = EnsureTrailingSlash(ToGenericString(absDuckDir));
 
-    model.load(gltfPath.c_str(), basePath.c_str(), BasicMaterial::BASIC);
+    model.load(gltfPath.c_str(), basePath.c_str(), BasicMaterial::PHONG);
 
     model.scale() = Vector3(0.01f, 0.01f, 0.01f);
 
@@ -587,6 +587,8 @@ bool Exercise5Module::loadModel()
 bool Exercise5Module::createMaterialBuffers()
 {
     ModuleResources* resources = app->getResources();
+    if (!resources)
+        return false;
 
     const auto& mats = model.getMaterials();
     materialBuffers.clear();
@@ -595,13 +597,17 @@ bool Exercise5Module::createMaterialBuffers()
     for (const BasicMaterial& mat : mats)
     {
         MaterialCBData cb = {};
-        const BasicMaterialData& src = mat.getBasicMaterial();
 
-        cb.colour = src.baseColour;
-        cb.hasColourTex = src.hasColourTexture;
+        // Exercise5 expects: base colour + has texture
+        const BasicMaterial::PhongMaterialData ph = mat.getPhongMaterial();
+
+        cb.colour = XMFLOAT4(ph.diffuseColour.x, ph.diffuseColour.y, ph.diffuseColour.z, ph.diffuseColour.w);
+        cb.hasColourTex = (ph.hasDiffuseTex != 0u) ? TRUE : FALSE;
 
         const size_t cbSize = alignUp(sizeof(MaterialCBData), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
-        materialBuffers.push_back(resources->createDefaultBuffer(&cb, cbSize, mat.getName()));
+
+        // IMPORTANT: pass const char* (not std::string)
+        materialBuffers.push_back(resources->createDefaultBuffer(&cb, cbSize, mat.getName().c_str()));
 
         if (!materialBuffers.back())
             return false;
@@ -609,3 +615,4 @@ bool Exercise5Module::createMaterialBuffers()
 
     return true;
 }
+

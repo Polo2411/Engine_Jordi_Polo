@@ -1,8 +1,10 @@
+﻿// Exercise6Module.h
 #pragma once
 
 #include "Module.h"
 #include "ModuleSamplers.h"
 #include "BasicModel.h"
+#include "BasicMaterial.h"
 
 #include <d3d12.h>
 #include <wrl.h>
@@ -61,7 +63,7 @@ private:
     {
         Matrix modelMat;
         Matrix normalMat;
-        PhongMaterialData material; // Cd + F0 + shininess + hasDiffuseTex
+        BasicMaterial::PhongMaterialData material; // ✅ adaptado
     };
 
     struct Light
@@ -94,12 +96,10 @@ private:
     bool showGrid = true;
     bool showGuizmo = true;
 
-    // 0=Translate, 1=Rotate, 2=Scale
     int gizmoOperation = 0;
 
     ModuleSamplers::Type currentSampler = ModuleSamplers::Type::Linear_Wrap;
 
-    // Local avg ms
     static constexpr int kAvgWindow = 60;
     double msHistory[kAvgWindow] = {};
     int    msIndex = 0;

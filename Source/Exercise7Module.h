@@ -2,6 +2,7 @@
 
 #include "Module.h"
 #include "ModuleSamplers.h"
+#include "BasicMaterial.h"
 #include "BasicModel.h"
 #include "RenderTexture.h"
 
@@ -28,9 +29,7 @@ private:
     bool createFrameBuffers();
     bool loadModel();
 
-    // Step 1 (PowerPoint): build ImGui (CPU) + get Scene window size + resize RT if needed
     void buildImGuiAndHandleResize(const Matrix& view, const Matrix& proj, uint32_t& outSceneW, uint32_t& outSceneH);
-
     void imGuiOptionsAndGizmo(const Matrix& view, const Matrix& proj);
     static Matrix computeNormalMatrixSafe(const Matrix& model);
 
@@ -40,12 +39,10 @@ private:
 
     BasicModel model;
 
-    // Offscreen render target for the Scene window
     std::unique_ptr<RenderTexture> sceneRT;
     uint32_t lastSceneW = 1;
     uint32_t lastSceneH = 1;
 
-    // Matches Exercise7.hlsli
     struct MVPData
     {
         Matrix mvp;
@@ -70,7 +67,7 @@ private:
     {
         Matrix modelMat;
         Matrix normalMat;
-        PhongMaterialData material;
+        BasicMaterial::PhongMaterialData material;
     };
 
     struct Light
@@ -98,17 +95,14 @@ private:
 
     std::unique_ptr<DebugDrawPass> debugDrawPass;
 
-    // UI
     bool showAxis = false;
     bool showGrid = true;
     bool showGuizmo = true;
 
-    // 0=Translate, 1=Rotate, 2=Scale
     int gizmoOperation = 0;
 
     ModuleSamplers::Type currentSampler = ModuleSamplers::Type::Linear_Wrap;
 
-    // Local avg ms
     static constexpr int kAvgWindow = 60;
     double msHistory[kAvgWindow] = {};
     int    msIndex = 0;
