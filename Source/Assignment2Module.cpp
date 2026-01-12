@@ -248,6 +248,7 @@ void Assignment2Module::buildImGuiAndHandleResize(const Matrix& view, const Matr
     {
         const ImVec2 imgPos = ImGui::GetCursorScreenPos();
         ImGui::Image((ImTextureID)sceneRT->getSrvHandle().ptr, avail);
+        ImGui::SetItemAllowOverlap();
 
         gSceneImgMin = imgPos;
         gSceneImgMax = ImVec2(imgPos.x + avail.x, imgPos.y + avail.y);
@@ -451,6 +452,8 @@ void Assignment2Module::render()
                 (sceneH > 0) ? (float(sceneW) / float(sceneH)) : 1.0f,
                 0.1f, 1000.0f);
         }
+        ImGuiIO& io = ImGui::GetIO();
+        io.ConfigWindowsMoveFromTitleBarOnly = true;
 
         buildImGuiAndHandleResize(view, proj, sceneW, sceneH);
 
